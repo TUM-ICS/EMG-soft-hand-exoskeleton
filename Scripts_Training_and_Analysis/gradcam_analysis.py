@@ -165,11 +165,11 @@ def load_test_data():
     print("Loading test data...")
     
     # Define file paths
-    block3_file = '../_data_for_ml/signal_data/RMS_ALS_block3.csv'
-    block4_file = '../_data_for_ml/signal_data/RMS_ALS_block4.csv'
+    block3_file = '../EMG_data/signal_data/RMS_ALS_block3.csv'
+    block4_file = '../EMG_data/signal_data/RMS_ALS_block4.csv'
     
-    block3_peaks_file = '../_data_for_ml/label_data/peaks_ALS_block3.csv'
-    block4_peaks_file = '../_data_for_ml/label_data/peaks_ALS_block4.csv'
+    block3_peaks_file = '../EMG_data/label_data/peaks_ALS_block3.csv'
+    block4_peaks_file = '../EMG_data/label_data/peaks_ALS_block4.csv'
     
     test_data = []
     

@@ -1,17 +1,17 @@
 """
-Fast Recovery Analysis Script
-============================
+Error Correction Analysis Script
+===============================
 
-This script analyzes the recovery patterns after false positive detections during baseline phases.
-It evaluates a trained CNN model or adaptive threshold method and tracks what happens in the
-500ms following each false positive detection during baseline periods.
+This script analyzes error correction patterns by detecting onsets and using a trained
+error model to classify the 250ms-500ms interval after each detected onset using 200ms windows.
 
 Analysis criteria:
 - Movement phases: -200ms before peak to +800ms after peak
 - Baseline phases: Everything that is NOT in a movement phase
-- False positive: Detection during baseline phase
-- Recovery window: 500ms after each false positive detection
-- Recovery analysis: Track detection patterns in the recovery window
+- Onset detection: Activity window (last 162ms) > baseline window (first 1000ms) + threshold
+- Error correction: Use trained error model with 200ms windows to classify 250ms-500ms interval after onset
+- Classification: Activity (red) or baseline (blue) phases
+- Error indicator: Blue dot if 3+ samples classified as baseline
 """
 
 import numpy as np
@@ -28,39 +28,41 @@ warnings.filterwarnings('ignore')
 # Create necessary directories
 os.makedirs('experiment_results', exist_ok=True)
 
-# Import the CNN model and dataset from the main script
+# Import the CNN models and datasets
 from train_cnn_onset_detection import PeakDetectionCNN, PeakDetectionDataset
+from train_cnn_error import MuscleActivityCNN, MuscleActivityDataset
 
 
-def list_available_models():
-    """List all available trained models."""
+def list_available_models(model_prefix="cnn_"):
+    """List all available trained models with specified prefix."""
     models_dir = 'trained_models'
     if not os.path.exists(models_dir):
         print(f"❌ No trained_models directory found")
         return []
     
-    model_files = glob.glob(os.path.join(models_dir, 'cnn_*.pth'))
+    model_files = glob.glob(os.path.join(models_dir, f'{model_prefix}*.pth'))
     if not model_files:
-        print(f"❌ No trained models found in {models_dir}")
+        print(f"❌ No {model_prefix} models found in {models_dir}")
         return []
     
     # Extract model names and sort them
     model_names = []
     for model_file in model_files:
         filename = os.path.basename(model_file)
-        # Extract dataset name from filename (remove 'cnn_' prefix and '.pth' suffix)
-        dataset_name = filename[4:-4].replace('_', ' ').replace('plus', '+')
+        # Extract dataset name from filename (remove prefix and '.pth' suffix)
+        prefix_length = len(model_prefix)
+        dataset_name = filename[prefix_length:-4].replace('_', ' ').replace('plus', '+')
         model_names.append((model_file, dataset_name))
     
     model_names.sort(key=lambda x: x[1])  # Sort by dataset name
     return model_names
 
 
-def select_model():
-    """Allow user to select a trained model or adaptive threshold method."""
-    available_models = list_available_models()
+def select_onset_detection_model():
+    """Allow user to select an onset detection model or adaptive threshold method."""
+    available_models = list_available_models("cnn_")
     
-    print("\nDetection method selection:")
+    print("\nOnset Detection Method Selection:")
     print("=" * 40)
     print("1. CNN Model Detection")
     if available_models:
@@ -129,6 +131,37 @@ def select_model():
             return None, None, "cnn"
 
 
+def select_error_detection_model():
+    """Allow user to select an error detection model."""
+    available_models = list_available_models("error_")
+    
+    if not available_models:
+        print("❌ No error detection models found. Please train an error model first.")
+        return None, None
+    
+    print("\nError Detection Model Selection:")
+    print("=" * 40)
+    print("Available error detection models:")
+    
+    for i, (model_path, dataset_name) in enumerate(available_models, 1):
+        print(f"{i}. {dataset_name}")
+    
+    while True:
+        try:
+            choice = int(input(f"\nSelect error model (1-{len(available_models)}): ")) - 1
+            if 0 <= choice < len(available_models):
+                selected_model_path, selected_dataset_name = available_models[choice]
+                print(f"✓ Selected error model: {selected_dataset_name}")
+                return selected_model_path, selected_dataset_name
+            else:
+                print(f"Please enter a number between 1 and {len(available_models)}")
+        except ValueError:
+            print("Please enter a valid number")
+        except KeyboardInterrupt:
+            print("\n❌ Operation cancelled")
+            return None, None
+
+
 def load_signal_data(signal_file):
     """Load signal data from CSV file."""
     try:
@@ -155,8 +188,8 @@ def load_test_data():
     print("Loading Test Data (P12-P15)")
     print("=" * 30)
     
-    signal_dir = '../_data_for_ml/signal_data'
-    label_dir = '../_data_for_ml/label_data'
+    signal_dir = '../EMG_data/signal_data'
+    label_dir = '../EMG_data/label_data'
     
     test_data = []
     
@@ -188,14 +221,14 @@ def load_als_data():
     print("Loading ALS Data (Last Two Blocks)")
     print("=" * 35)
     
-    signal_dir = '../_data_for_ml/signal_data'
-    label_dir = '../_data_for_ml/label_data'
+    signal_dir = '../EMG_data/signal_data'
+    label_dir = '../EMG_data/label_data'
     
     als_data = []
     
     # Load the last two blocks of ALS data (block3 and block4)
-    # als_blocks = ['block3', 'block4']  # Last two blocks
-    als_blocks = ['block3']  # Last two blocks
+    als_blocks = ['block3', 'block4']  # Last two blocks
+    # als_blocks = ['block4']  # Last two blocks
     
     for block in als_blocks:
         signal_file = os.path.join(signal_dir, f'RMS_ALS_{block}.csv')
@@ -219,7 +252,7 @@ def load_als_data():
     return als_data
 
 
-def create_movement_phases(peak_timestamps, pre_peak_ms=200, post_peak_ms=800):
+def create_movement_phases(peak_timestamps, pre_peak_ms=400, post_peak_ms=800):
     """
     Create movement phases around peaks.
     
@@ -257,7 +290,7 @@ def is_in_baseline_phase(timestamp, baseline_phases):
     return False
 
 
-def create_movement_phases(peak_timestamps, pre_peak_ms=200, post_peak_ms=800):
+def create_movement_phases(peak_timestamps, pre_peak_ms=400, post_peak_ms=800):
     """
     Create movement phases only. Everything else is considered baseline.
     
@@ -394,16 +427,22 @@ def adaptive_threshold_detection(signal_data, movement_phases, window_size_ms=11
     movement_detections = [d for d in all_detections if d['is_movement_phase']]
     baseline_detections = [d for d in all_detections if d['is_baseline_phase']]
     
-    # Movement phase evaluation (sample-level - should have detections)
-    movement_detected = [d for d in movement_detections if d['detected']]
-    movement_correct = len(movement_detected)
-    movement_total = len(movement_detections)
+    # Movement phase evaluation (phase-based - at least one detection per phase)
+    movement_phases_with_detection = 0
+    for i, (start_time, end_time) in enumerate(movement_phases):
+        phase_detections = [d for d in movement_detections if start_time <= d['timestamp'] <= end_time]
+        phase_detected = [d for d in phase_detections if d['detected']]
+        if len(phase_detected) > 0:
+            movement_phases_with_detection += 1
+    
+    movement_correct = movement_phases_with_detection
+    movement_total = len(movement_phases)
     movement_accuracy = movement_correct / movement_total if movement_total > 0 else 0
     
-    print(f"  Movement Phase (sample-level):")
-    print(f"    Total samples: {movement_total}")
-    print(f"    Correct (detected): {movement_correct}")
-    print(f"    Missed detections: {movement_total - movement_correct}")
+    print(f"  Movement Phase (phase-based):")
+    print(f"    Total phases: {movement_total}")
+    print(f"    Phases with detection: {movement_correct}")
+    print(f"    Missed phases: {movement_total - movement_correct}")
     print(f"    Accuracy: {movement_accuracy:.3f}")
     
     # Create movement phase results for compatibility
@@ -459,6 +498,103 @@ def adaptive_threshold_detection(signal_data, movement_phases, window_size_ms=11
         'method': 'adaptive_threshold',
         'lambda_threshold': lambda_threshold
     }
+
+
+def classify_error_intervals(error_model, device, signal_data, onset_timestamps, 
+                           interval_start_ms=250, interval_end_ms=500, sampling_rate=34.81):
+    """
+    Classify 250ms-500ms intervals after each detected onset using error model with 200ms windows.
+    
+    Args:
+        error_model: Trained error detection model
+        device: PyTorch device
+        signal_data: DataFrame with signal data
+        onset_timestamps: List of detected onset timestamps
+        interval_start_ms: Start of classification interval in ms
+        interval_end_ms: End of classification interval in ms
+        sampling_rate: Sampling rate in Hz
+    
+    Returns:
+        List of classification results for each onset
+    """
+    timestamps = signal_data['timestamp'].values
+    signal_column = 'rms' if 'rms' in signal_data.columns else 'emg'
+    signal_values = signal_data[signal_column].values
+    
+    interval_start_s = interval_start_ms / 1000.0
+    interval_end_s = interval_end_ms / 1000.0
+    
+    print(f"  Error model classification:")
+    print(f"  Signal duration: {timestamps[-1] - timestamps[0]:.2f}s")
+    print(f"  Classification interval: {interval_start_ms}ms - {interval_end_ms}ms after onset")
+    print(f"  Onsets to classify: {len(onset_timestamps)}")
+    
+    classification_results = []
+    
+    for onset_time in onset_timestamps:
+        # Calculate interval times
+        interval_start_time = onset_time + interval_start_s
+        interval_end_time = onset_time + interval_end_s
+        
+        # Find corresponding sample indices
+        start_idx = np.argmin(np.abs(timestamps - interval_start_time))
+        end_idx = np.argmin(np.abs(timestamps - interval_end_time))
+        
+        # Extract interval signal
+        interval_signal = signal_values[start_idx:end_idx]
+        interval_times = timestamps[start_idx:end_idx]
+        
+        if len(interval_signal) < 10:  # Skip if interval too short
+            continue
+        
+        # Create 200ms windows for classification (sliding through the interval)
+        window_size_samples = int(200 * sampling_rate / 1000)  # 200ms window
+        window_predictions = []
+        window_probabilities = []
+        
+        for i in range(len(interval_signal) - window_size_samples + 1):
+            window = interval_signal[i:i + window_size_samples]
+            
+            # Prepare window for model
+            window_tensor = torch.FloatTensor(window).unsqueeze(0).unsqueeze(0)  # Add batch and channel dims
+            window_tensor = window_tensor.to(device)
+            
+            # Get prediction
+            with torch.no_grad():
+                logits = error_model(window_tensor)
+                probability = torch.sigmoid(logits).cpu().numpy()[0]
+                prediction = 1 if probability > 0.5 else 0
+            
+            window_predictions.append(prediction)
+            window_probabilities.append(probability)
+        
+        # Count baseline classifications
+        baseline_count = sum(1 for p in window_predictions if p == 0)
+        activity_count = len(window_predictions) - baseline_count
+        
+        # Determine overall classification
+        overall_classification = 'baseline' if baseline_count > activity_count else 'activity'
+        
+        # Check if error indicator should be shown (3+ baseline samples)
+        show_error_dot = baseline_count >= 3
+        error_dot_time = interval_times[2] if show_error_dot else None  # Third sample time
+        
+        classification_results.append({
+            'onset_time': onset_time,
+            'interval_start': interval_start_time,
+            'interval_end': interval_end_time,
+            'baseline_count': baseline_count,
+            'activity_count': activity_count,
+            'total_windows': len(window_predictions),
+            'overall_classification': overall_classification,
+            'show_error_dot': show_error_dot,
+            'error_dot_time': error_dot_time,
+            'window_predictions': window_predictions,
+            'window_probabilities': window_probabilities
+        })
+    
+    print(f"  Classified {len(classification_results)} intervals")
+    return classification_results
 
 
 def sliding_window_evaluation(model, signal_data, movement_phases, window_size_ms=1162, 
@@ -597,6 +733,246 @@ def sliding_window_evaluation(model, signal_data, movement_phases, window_size_m
         'detection_delays': detection_delays,
         'baseline_detections': baseline_detections,
         'all_detections': detections
+    }
+
+
+def calculate_corrected_accuracies(onset_detections, classification_results, movement_phases, 
+                                 correction_window_ms=500, sampling_rate=34.81):
+    """
+    Calculate corrected accuracies by removing detections within correction_window_ms before baseline classification.
+    
+    Args:
+        onset_detections: List of onset detections
+        classification_results: List of error model classification results
+        movement_phases: List of movement phase time ranges
+        correction_window_ms: Time window before baseline classification to exclude (ms)
+        sampling_rate: Sampling rate in Hz
+    
+    Returns:
+        Dictionary with corrected accuracy results
+    """
+    # Convert onset detections to list of dictionaries if it's a structured array
+    if isinstance(onset_detections, np.ndarray):
+        onset_list = []
+        for i in range(len(onset_detections)):
+            onset_dict = {
+                'timestamp': onset_detections[i]['timestamp'],
+                'detected': onset_detections[i]['detected'],
+                'is_movement_phase': onset_detections[i]['is_movement_phase'],
+                'is_baseline_phase': onset_detections[i]['is_baseline_phase']
+            }
+            if 'probability' in onset_detections.dtype.names:
+                onset_dict['probability'] = onset_detections[i]['probability']
+            else:
+                onset_dict['probability'] = 0.5
+            onset_list.append(onset_dict)
+        onset_detections = onset_list
+    
+    # Filter to only actual detections
+    actual_onsets = [d for d in onset_detections if d['detected']]
+    
+    # Find baseline classification periods
+    baseline_classification_periods = []
+    for result in classification_results:
+        if result['overall_classification'] == 'baseline':
+            baseline_classification_periods.append((result['interval_start'], result['interval_end']))
+    
+    # Mark detections that should be excluded (within correction_window_ms before baseline classification)
+    correction_window_s = correction_window_ms / 1000.0
+    excluded_detections = set()
+    
+    for onset in actual_onsets:
+        onset_time = onset['timestamp']
+        
+        # Check if this onset is within correction_window_ms before any baseline classification period
+        for baseline_start, baseline_end in baseline_classification_periods:
+            if baseline_start - correction_window_s <= onset_time <= baseline_start:
+                excluded_detections.add(id(onset))
+                break
+    
+    # Calculate corrected accuracies
+    # Baseline accuracy (sample-based, excluding detections before baseline classification)
+    baseline_onsets = [d for d in actual_onsets if d['is_baseline_phase']]
+    baseline_excluded = [d for d in baseline_onsets if id(d) in excluded_detections]
+    baseline_remaining = [d for d in baseline_onsets if id(d) not in excluded_detections]
+    
+    # For baseline, we need to count all baseline samples, not just detections
+    # Get all baseline samples from the original onset_detections
+    all_baseline_samples = [d for d in onset_detections if d['is_baseline_phase']]
+    baseline_samples_excluded = [d for d in all_baseline_samples if id(d) in excluded_detections]
+    baseline_samples_remaining = [d for d in all_baseline_samples if id(d) not in excluded_detections]
+    
+    # Count correct baseline samples (no detections = correct)
+    baseline_corrected_total = len(baseline_samples_remaining)
+    baseline_corrected_correct = len([d for d in baseline_samples_remaining if not d['detected']])
+    baseline_corrected_accuracy = baseline_corrected_correct / baseline_corrected_total if baseline_corrected_total > 0 else 0
+    
+    # Movement accuracy (excluding detections before baseline classification)
+    movement_onsets = [d for d in actual_onsets if d['is_movement_phase']]
+    movement_excluded = [d for d in movement_onsets if id(d) in excluded_detections]
+    movement_remaining = [d for d in movement_onsets if id(d) not in excluded_detections]
+    
+    # Check if at least one detection per movement phase (excluding corrected ones)
+    movement_phases_with_detection = set()
+    for onset in movement_remaining:
+        for i, (start_time, end_time) in enumerate(movement_phases):
+            if start_time <= onset['timestamp'] <= end_time:
+                movement_phases_with_detection.add(i)
+                break
+    
+    movement_corrected_total = len(movement_phases)
+    movement_corrected_correct = len(movement_phases_with_detection)
+    movement_corrected_accuracy = movement_corrected_correct / movement_corrected_total if movement_corrected_total > 0 else 0
+    
+    return {
+        'baseline_corrected_total': baseline_corrected_total,
+        'baseline_corrected_correct': baseline_corrected_correct,
+        'baseline_corrected_accuracy': baseline_corrected_accuracy,
+        'baseline_excluded_count': len(baseline_samples_excluded),
+        'movement_corrected_total': movement_corrected_total,
+        'movement_corrected_correct': movement_corrected_correct,
+        'movement_corrected_accuracy': movement_corrected_accuracy,
+        'movement_excluded_count': len(movement_excluded),
+        'excluded_detection_ids': excluded_detections
+    }
+
+
+def analyze_error_correction(signal_data, movement_phases, onset_detections, classification_results, 
+                           sampling_rate=34.81):
+    """
+    Analyze error correction patterns using error model classification results.
+    
+    Args:
+        signal_data: DataFrame with signal data
+        movement_phases: List of movement phase time ranges
+        onset_detections: List of onset detections
+        classification_results: List of error model classification results
+        sampling_rate: Sampling rate in Hz
+    
+    Returns:
+        Dictionary with error correction analysis results
+    """
+    print(f"  Error correction analysis:")
+    print(f"  Onset detections: {len(onset_detections)}")
+    print(f"  Classification results: {len(classification_results)}")
+    
+    # Convert onset detections to list of dictionaries if it's a structured array
+    if isinstance(onset_detections, np.ndarray):
+        onset_list = []
+        for i in range(len(onset_detections)):
+            onset_dict = {
+                'timestamp': onset_detections[i]['timestamp'],
+                'detected': onset_detections[i]['detected'],
+                'is_movement_phase': onset_detections[i]['is_movement_phase'],
+                'is_baseline_phase': onset_detections[i]['is_baseline_phase']
+            }
+            if 'probability' in onset_detections.dtype.names:
+                onset_dict['probability'] = onset_detections[i]['probability']
+            else:
+                onset_dict['probability'] = 0.5
+            onset_list.append(onset_dict)
+        onset_detections = onset_list
+    
+    # Filter to only actual detections
+    actual_onsets = [d for d in onset_detections if d['detected']]
+    
+    print(f"  Actual onset detections: {len(actual_onsets)}")
+    
+    # Analyze error correction for each onset
+    error_correction_analyses = []
+    
+    for i, onset in enumerate(actual_onsets):
+        onset_time = onset['timestamp']
+        onset_is_movement = onset['is_movement_phase']
+        onset_is_baseline = onset['is_baseline_phase']
+        
+        # Find corresponding classification result
+        classification_result = None
+        for result in classification_results:
+            if abs(result['onset_time'] - onset_time) < 0.1:  # Within 100ms tolerance
+                classification_result = result
+                break
+        
+        if classification_result is None:
+            continue
+        
+        # Determine if this is a false positive or true positive
+        is_false_positive = onset_is_baseline
+        is_true_positive = onset_is_movement
+        
+        # Check if error correction occurred (3+ baseline samples)
+        has_error_correction = classification_result['show_error_dot']
+        
+        error_correction_analyses.append({
+            'onset_index': i,
+            'onset_time': onset_time,
+            'onset_probability': onset['probability'],
+            'is_false_positive': is_false_positive,
+            'is_true_positive': is_true_positive,
+            'baseline_count': classification_result['baseline_count'],
+            'activity_count': classification_result['activity_count'],
+            'overall_classification': classification_result['overall_classification'],
+            'has_error_correction': has_error_correction,
+            'error_dot_time': classification_result['error_dot_time'],
+            'classification_result': classification_result
+        })
+        
+        print(f"    Onset {i+1}: {onset_time:.2f}s ({'FP' if is_false_positive else 'TP'}) -> "
+              f"{classification_result['baseline_count']} baseline, {classification_result['activity_count']} activity "
+              f"({classification_result['overall_classification']}) {'[ERROR]' if has_error_correction else ''}")
+    
+    # Separate false positives and true positives
+    false_positive_onsets = [a for a in error_correction_analyses if a['is_false_positive']]
+    true_positive_onsets = [a for a in error_correction_analyses if a['is_true_positive']]
+    
+    # Calculate statistics for false positives
+    if false_positive_onsets:
+        fp_corrections = [a for a in false_positive_onsets if a['has_error_correction']]
+        fp_correction_count = len(fp_corrections)
+        fp_correction_ratio = fp_correction_count / len(false_positive_onsets)
+        fp_avg_baseline = np.mean([a['baseline_count'] for a in false_positive_onsets])
+        fp_avg_activity = np.mean([a['activity_count'] for a in false_positive_onsets])
+    else:
+        fp_correction_count = 0
+        fp_correction_ratio = 0
+        fp_avg_baseline = 0
+        fp_avg_activity = 0
+    
+    # Calculate statistics for true positives
+    if true_positive_onsets:
+        tp_corrections = [a for a in true_positive_onsets if a['has_error_correction']]
+        tp_correction_count = len(tp_corrections)
+        tp_correction_ratio = tp_correction_count / len(true_positive_onsets)
+        tp_avg_baseline = np.mean([a['baseline_count'] for a in true_positive_onsets])
+        tp_avg_activity = np.mean([a['activity_count'] for a in true_positive_onsets])
+    else:
+        tp_correction_count = 0
+        tp_correction_ratio = 0
+        tp_avg_baseline = 0
+        tp_avg_activity = 0
+    
+    print(f"  False Positives: {len(false_positive_onsets)} total, {fp_correction_count} with error correction ({fp_correction_ratio:.1%})")
+    print(f"    Average classification: {fp_avg_baseline:.1f} baseline, {fp_avg_activity:.1f} activity")
+    print(f"  True Positives: {len(true_positive_onsets)} total, {tp_correction_count} with error correction ({tp_correction_ratio:.1%})")
+    print(f"    Average classification: {tp_avg_baseline:.1f} baseline, {tp_avg_activity:.1f} activity")
+    
+    return {
+        'error_correction_analyses': error_correction_analyses,
+        'false_positive_onsets': false_positive_onsets,
+        'true_positive_onsets': true_positive_onsets,
+        'summary': {
+            'total_onsets': len(actual_onsets),
+            'false_positive_count': len(false_positive_onsets),
+            'true_positive_count': len(true_positive_onsets),
+            'fp_correction_count': fp_correction_count,
+            'fp_correction_ratio': fp_correction_ratio,
+            'tp_correction_count': tp_correction_count,
+            'tp_correction_ratio': tp_correction_ratio,
+            'fp_avg_baseline': fp_avg_baseline,
+            'fp_avg_activity': fp_avg_activity,
+            'tp_avg_baseline': tp_avg_baseline,
+            'tp_avg_activity': tp_avg_activity
+        }
     }
 
 
@@ -935,8 +1311,309 @@ def visualize_detection_frequency_histograms(participant_name, histogram_results
     plt.show()
 
 
+def visualize_error_correction(participant_name, signal_data, peak_timestamps, onset_detections, 
+                              classification_results, error_correction_results, dataset_name="Unknown", 
+                              method="cnn", save_all=False, interval_start_ms=250, interval_end_ms=500, 
+                              corrected_accuracies=None, pre_peak_ms=400, post_peak_ms=800):
+    """Visualize error correction analysis with onsets and error model classification."""
+    
+    # Get signal data
+    signal_column = 'rms' if 'rms' in signal_data.columns else 'emg'
+    timestamps = signal_data['timestamp'].values
+    signal_values = signal_data[signal_column].values
+    
+    # Create movement phases for visualization
+    movement_phases = create_movement_phases(peak_timestamps, pre_peak_ms=pre_peak_ms, post_peak_ms=post_peak_ms)
+    
+    # Create single plot
+    fig, ax = plt.subplots(1, 1, figsize=(15, 8))
+    
+    # Calculate y-axis limits for top/bottom separation
+    y_min = np.min(signal_values)
+    y_max = np.max(signal_values)+0.3
+    y_mid = (y_min + y_max) / 2
+    
+    # Plot signal
+    ax.plot(timestamps, signal_values, 'k-', alpha=0.8, linewidth=0.8, label='RMS EMG Signal')
+    
+    # Highlight movement phases (true labels) - red background in bottom half only
+    for start_time, end_time in movement_phases:
+        ax.axvspan(start_time, end_time, ymin=0, ymax=0.5, alpha=0.3, color='red', 
+                   label='Movement Phase (True Label)' if start_time == movement_phases[0][0] else "")
+    
+    # Plot classification results (dynamic interval after onsets) - blue background in top half only
+    for result in classification_results:
+        onset_time = result['onset_time']
+        interval_start = result['interval_start']
+        interval_end = result['interval_end']
+        
+        # Only show blue background for baseline classification in top half
+        if result['overall_classification'] == 'baseline':
+            ax.axvspan(interval_start, interval_end, ymin=0.5, ymax=1, alpha=0.6, color='blue', 
+                       label='Baseline Classification (Predicted)' if result == classification_results[0] else "")
+    
+    # Plot actual peaks
+    if len(peak_timestamps) > 0:
+        peak_values = []
+        for peak_time in peak_timestamps:
+            closest_idx = np.argmin(np.abs(timestamps - peak_time))
+            peak_values.append(signal_values[closest_idx])
+        
+        ax.scatter(peak_timestamps, peak_values, color='red', s=50, 
+                   label=f'Actual Muscle Activation Peaks', zorder=5)
+    
+    # Plot onset detections with selective display
+    onset_times = [d['timestamp'] for d in onset_detections if d['detected']]
+    onset_probs = [d['probability'] for d in onset_detections if d['detected']]
+    onset_is_movement = [d['is_movement_phase'] for d in onset_detections if d['detected']]
+    
+    if onset_times:
+        # Scale probabilities to signal range
+        prob_scale = np.max(signal_values) * 0.8
+        scaled_probs = [p * prob_scale for p in onset_probs]
+        
+        # Get excluded detection IDs if corrected accuracies are available
+        excluded_ids = set()
+        if corrected_accuracies is not None:
+            excluded_ids = corrected_accuracies.get('excluded_detection_ids', set())
+        
+        # Separate onset detections by phase
+        movement_onsets = []
+        baseline_onsets = []
+        movement_onset_probs = []
+        baseline_onset_probs = []
+        movement_onset_objects = []
+        baseline_onset_objects = []
+        
+        for i, (onset_time, onset_prob, is_movement) in enumerate(zip(onset_times, onset_probs, onset_is_movement)):
+            onset_obj = next(d for d in onset_detections if d['detected'] and d['timestamp'] == onset_time)
+            if is_movement:
+                movement_onsets.append(onset_time)
+                movement_onset_probs.append(onset_prob)
+                movement_onset_objects.append(onset_obj)
+            else:
+                baseline_onsets.append(onset_time)
+                baseline_onset_probs.append(onset_prob)
+                baseline_onset_objects.append(onset_obj)
+        
+        # For movement phases, only show first onset detection per phase
+        movement_onsets_filtered = []
+        movement_onset_probs_filtered = []
+        movement_onsets_excluded = []
+        movement_onset_probs_excluded = []
+        onset_peak_differences = []  # Store timing differences
+        
+        for i, (start_time, end_time) in enumerate(movement_phases):
+            # Find first onset detection in this movement phase
+            first_onset_in_phase = None
+            first_onset_prob = None
+            first_onset_obj = None
+            
+            for onset_time, onset_prob, onset_obj in zip(movement_onsets, movement_onset_probs, movement_onset_objects):
+                if start_time <= onset_time <= end_time:
+                    first_onset_in_phase = onset_time
+                    first_onset_prob = onset_prob
+                    first_onset_obj = onset_obj
+                    break
+            
+            if first_onset_in_phase is not None:
+                if id(first_onset_obj) in excluded_ids:
+                    movement_onsets_excluded.append(first_onset_in_phase)
+                    movement_onset_probs_excluded.append(first_onset_prob)
+                else:
+                    movement_onsets_filtered.append(first_onset_in_phase)
+                    movement_onset_probs_filtered.append(first_onset_prob)
+                
+                # Calculate timing difference between first onset and peak
+                # Find the corresponding peak for this movement phase
+                phase_peak_time = peak_timestamps[i] if i < len(peak_timestamps) else None
+                if phase_peak_time is not None:
+                    timing_diff = first_onset_in_phase - phase_peak_time  # Positive if onset is after peak
+                    onset_peak_differences.append(timing_diff)
+        
+        # Plot filtered movement onset detections (green for first onsets)
+        if movement_onsets_filtered:
+            movement_scaled_probs = [p * prob_scale for p in movement_onset_probs_filtered]
+            ax.scatter(movement_onsets_filtered, movement_scaled_probs, color='green', s=20, 
+                       label=f'First Onset per Movement Phase ({len(movement_onsets_filtered)})', zorder=5)
+        
+        # Plot excluded movement onset detections (crossed out)
+        if movement_onsets_excluded:
+            movement_excluded_scaled_probs = [p * prob_scale for p in movement_onset_probs_excluded]
+            ax.scatter(movement_onsets_excluded, movement_excluded_scaled_probs, color='green', s=20, 
+                       marker='x', label=f'Excluded Movement Onsets ({len(movement_onsets_excluded)})', zorder=5)
+        
+        # Plot baseline onset detections (blue, with exclusions crossed out)
+        baseline_onsets_remaining = []
+        baseline_onsets_excluded = []
+        baseline_onset_probs_remaining = []
+        baseline_onset_probs_excluded = []
+        
+        for onset_time, onset_prob, onset_obj in zip(baseline_onsets, baseline_onset_probs, baseline_onset_objects):
+            if id(onset_obj) in excluded_ids:
+                baseline_onsets_excluded.append(onset_time)
+                baseline_onset_probs_excluded.append(onset_prob)
+            else:
+                baseline_onsets_remaining.append(onset_time)
+                baseline_onset_probs_remaining.append(onset_prob)
+        
+        # Plot remaining baseline onset detections
+        if baseline_onsets_remaining:
+            baseline_remaining_scaled_probs = [p * prob_scale for p in baseline_onset_probs_remaining]
+            ax.scatter(baseline_onsets_remaining, baseline_remaining_scaled_probs, color='blue', s=20, 
+                       label=f'Baseline Onset Detections ({len(baseline_onsets_remaining)})', zorder=5)
+        
+        # Plot excluded baseline onset detections (crossed out)
+        if baseline_onsets_excluded:
+            baseline_excluded_scaled_probs = [p * prob_scale for p in baseline_onset_probs_excluded]
+            ax.scatter(baseline_onsets_excluded, baseline_excluded_scaled_probs, color='blue', s=20, 
+                       marker='x', label=f'Excluded Baseline Onsets ({len(baseline_onsets_excluded)})', zorder=5)
+    
+    # Add error correction statistics
+    summary = error_correction_results['summary']
+    fp_count = summary['false_positive_count']
+    tp_count = summary['true_positive_count']
+    fp_corrections = summary['fp_correction_count']
+    tp_corrections = summary['tp_correction_count']
+    fp_ratio = summary['fp_correction_ratio']
+    tp_ratio = summary['tp_correction_ratio']
+    
+    # Add corrected accuracy statistics
+    corrected_stats = ""
+    if corrected_accuracies is not None:
+        baseline_corrected_acc = corrected_accuracies['baseline_corrected_accuracy']
+        movement_corrected_acc = corrected_accuracies['movement_corrected_accuracy']
+        baseline_excluded = corrected_accuracies['baseline_excluded_count']
+        movement_excluded = corrected_accuracies['movement_excluded_count']
+        
+        corrected_stats = f'Corrected Accuracies (500ms exclusion):\n'
+        corrected_stats += f'Baseline: {baseline_corrected_acc:.3f} (excluded {baseline_excluded})\n'
+        corrected_stats += f'Movement: {movement_corrected_acc:.3f} (excluded {movement_excluded})\n'
+    
+    # Calculate timing difference statistics
+    timing_stats = ""
+    if onset_peak_differences:
+        timing_diffs_ms = [diff * 1000 for diff in onset_peak_differences]  # Convert to milliseconds
+        mean_diff = np.mean(timing_diffs_ms)
+        var_diff = np.var(timing_diffs_ms)
+        std_diff = np.std(timing_diffs_ms)
+        timing_stats = f'Onset-Peak Timing (ms):\n'
+        timing_stats += f'Mean: {mean_diff:.1f}ms, Std: {std_diff:.1f}ms\n'
+        #timing_stats += f'Variance: {var_diff:.1f}ms², N={len(timing_diffs_ms)}\n'
+    
+    # Add statistics text box
+    #stats_text = f'Error Correction Analysis:\n'
+    #stats_text += f'False Positives: {fp_count} total, {fp_corrections} with error correction ({fp_ratio:.1%})\n'
+    #stats_text += f'True Positives: {tp_count} total, {tp_corrections} with error correction ({tp_ratio:.1%})\n'
+    #if corrected_stats:
+    #    stats_text += f'\n{corrected_stats}'
+    #if timing_stats:
+    #    stats_text += f'\n{timing_stats}'
+    
+    #ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, verticalalignment='top',
+    #        bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
+    
+    # Formatting
+    ax.set_xlabel('Time (seconds)')
+    ax.set_ylabel('RMS EMG (V)')
+    ax.set_title(f'Error Correction Analysis: {participant_name}\n'
+                f'Red: True labels (movement phases), Blue: Predicted labels ({interval_start_ms}ms-{interval_end_ms}ms after onsets)')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # Save plot based on user preference
+    if save_all:
+        plot_filename = f"experiment_results/{participant_name}_error_correction_{dataset_name}_{method}.png"
+        plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+        print(f"✓ Saved error correction plot: {plot_filename}")
+    
+    plt.show()
+
+
+def visualize_onset_peak_timing_distribution(all_results, dataset_name="Unknown", method="cnn", save_all=False):
+    """Create a distribution plot of onset-peak timing differences across all participants."""
+    
+    # Collect all timing differences from all participants
+    all_timing_diffs = []
+    participant_labels = []
+    
+    for result in all_results:
+        if 'onset_peak_differences' in result and result['onset_peak_differences']:
+            timing_diffs_ms = [diff * 1000 for diff in result['onset_peak_differences']]  # Convert to milliseconds
+            all_timing_diffs.extend(timing_diffs_ms)
+            participant_labels.extend([result['participant']] * len(timing_diffs_ms))
+    
+    if not all_timing_diffs:
+        print("  No onset-peak timing data available for distribution plot")
+        return
+    
+    # Create the distribution plot
+    plt.figure(figsize=(12, 8))
+    
+    # Create histogram
+    plt.subplot(2, 1, 1)
+    n, bins, patches = plt.hist(all_timing_diffs, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+    plt.xlabel('Onset-Peak Timing Difference (ms)')
+    plt.ylabel('Frequency')
+    plt.title(f'Distribution of Onset-Peak Timing Differences\n{dataset_name} Data - {method.upper()} Method')
+    plt.grid(True, alpha=0.3)
+    
+    # Add statistics text
+    mean_timing = np.mean(all_timing_diffs)
+    std_timing = np.std(all_timing_diffs)
+    median_timing = np.median(all_timing_diffs)
+    min_timing = np.min(all_timing_diffs)
+    max_timing = np.max(all_timing_diffs)
+    
+    stats_text = f'Statistics:\n'
+    stats_text += f'Count: {len(all_timing_diffs)}\n'
+    stats_text += f'Mean: {mean_timing:.1f}ms\n'
+    stats_text += f'Std: {std_timing:.1f}ms\n'
+    stats_text += f'Median: {median_timing:.1f}ms\n'
+    stats_text += f'Range: {min_timing:.1f}ms - {max_timing:.1f}ms'
+    
+    plt.text(0.02, 0.98, stats_text, transform=plt.gca().transAxes, 
+             verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8))
+    
+    # Create box plot by participant
+    plt.subplot(2, 1, 2)
+    
+    # Group timing differences by participant
+    participant_timings = {}
+    for i, participant in enumerate(participant_labels):
+        if participant not in participant_timings:
+            participant_timings[participant] = []
+        participant_timings[participant].append(all_timing_diffs[i])
+    
+    # Create box plot data
+    box_data = []
+    box_labels = []
+    for participant in sorted(participant_timings.keys()):
+        box_data.append(participant_timings[participant])
+        box_labels.append(participant)
+    
+    plt.boxplot(box_data, labels=box_labels)
+    plt.xlabel('Participant')
+    plt.ylabel('Onset-Peak Timing Difference (ms)')
+    plt.title('Onset-Peak Timing Distribution by Participant')
+    plt.xticks(rotation=45)
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # Save plot based on user preference
+    if save_all:
+        plot_filename = f"experiment_results/onset_peak_timing_distribution_{dataset_name}_{method}.png"
+        plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+        print(f"✓ Saved onset-peak timing distribution plot: {plot_filename}")
+    
+    plt.show()
+
+
 def interactive_false_positive_explorer(participant_name, signal_data, peak_timestamps, recovery_results, 
-                                      dataset_name="Unknown", method="cnn", save_all=False):
+                                      dataset_name="Unknown", method="cnn", save_all=False, pre_peak_ms=400, post_peak_ms=800):
     """Interactive exploration of first false positives with scrolling through each one."""
     
     if not recovery_results or recovery_results['summary']['total_first_fps'] == 0:
@@ -949,7 +1626,7 @@ def interactive_false_positive_explorer(participant_name, signal_data, peak_time
     print(f"  Use 'n' for next, 'p' for previous, 'q' to quit, or number to jump to specific FP")
     
     # Create movement phases for visualization
-    movement_phases = create_movement_phases(peak_timestamps, pre_peak_ms=200, post_peak_ms=800)
+    movement_phases = create_movement_phases(peak_timestamps, pre_peak_ms=pre_peak_ms, post_peak_ms=post_peak_ms)
     
     # Get signal data
     signal_column = 'rms' if 'rms' in signal_data.columns else 'emg'
@@ -1016,7 +1693,7 @@ def interactive_false_positive_explorer(participant_name, signal_data, peak_time
                 peak_values.append(signal_values[closest_idx])
             
             ax.scatter(peak_times_in_range, peak_values, 
-                      color='red', s=50, label=f'Actual Peaks ({len(peak_times_in_range)})', zorder=5)
+                      color='red', s=50, label=f'Actual Muscle Activation Peaks', zorder=5)
         
         # Plot detections in recovery window
         following_detections = fp_analysis['following_detections']
@@ -1070,8 +1747,8 @@ def interactive_false_positive_explorer(participant_name, signal_data, peak_time
             print("  Invalid command. Use 'n' (next), 'p' (previous), 'q' (quit), or number (1-{})".format(len(first_fp_analyses)))
 
 
-def evaluate_participant(model, participant_data, window_size_ms=1162, peak_detection_ms=162, method="cnn", lambda_threshold=2.0, save_all=False):
-    """Evaluate a single participant."""
+def evaluate_participant(model, error_model, device, participant_data, window_size_ms=1162, peak_detection_ms=162, method="cnn", lambda_threshold=2.0, save_all=False, interval_start_ms=250, interval_end_ms=500, pre_peak_ms=400, post_peak_ms=800):
+    """Evaluate a single participant with error correction analysis."""
     participant_name = participant_data['participant']
     signal_data = participant_data['signal_data']
     peak_timestamps = participant_data['peak_timestamps']
@@ -1080,7 +1757,7 @@ def evaluate_participant(model, participant_data, window_size_ms=1162, peak_dete
     print("-" * 20)
     
     # Create movement phases (everything else is baseline)
-    movement_phases = create_movement_phases(peak_timestamps, pre_peak_ms=200, post_peak_ms=800)
+    movement_phases = create_movement_phases(peak_timestamps, pre_peak_ms=pre_peak_ms, post_peak_ms=post_peak_ms)
     print(f"✓ Created {len(movement_phases)} movement phases")
     print(f"✓ Everything else will be treated as baseline")
     
@@ -1103,67 +1780,64 @@ def evaluate_participant(model, participant_data, window_size_ms=1162, peak_dete
     print(f"    Accuracy: {results['movement_phase_accuracy']:.3f} ({results['movement_phase_correct']:.0f}/{results['movement_phase_total']})")
     print(f"  Average Detection Delay: {results['average_delay_ms']:.1f} ms")
     
-    # Perform fast recovery analysis
-    print(f"\n  Fast Recovery Analysis:")
-    print(f"  " + "="*30)
-    
-    # Get detections for recovery analysis
+    # Get onset detections for error correction analysis
     if method == "adaptive":
-        # For adaptive method, combine baseline and movement detections
-        all_detections = []
-        baseline_detections = results.get('baseline_detections', [])
-        movement_detections = results.get('movement_phase_results', [])
-        
-        print(f"  Debug: Found {len(baseline_detections)} baseline detections")
-        print(f"  Debug: Found {len(movement_detections)} movement phase results")
-        
-        # Debug: Show structure of first baseline detection
-        if baseline_detections:
-            print(f"  Debug: First baseline detection keys: {list(baseline_detections[0].keys())}")
-        
-        # Add baseline detections
-        for d in baseline_detections:
-            all_detections.append({
-                'timestamp': d['timestamp'],
-                'probability': d.get('probability', 0.5),  # Default if not present
-                'detected': d['detected'],
-                'is_movement_phase': False,
-                'is_baseline_phase': True
-            })
-        
-        # Add movement detections
-        for phase_result in movement_detections:
-            for d in phase_result.get('detections', []):
-                all_detections.append({
-                    'timestamp': d['timestamp'],
-                    'probability': d.get('probability', 0.5),  # Default if not present
-                    'detected': d['detected'],
-                    'is_movement_phase': True,
-                    'is_baseline_phase': False
-                })
+        onset_detections = results.get('all_detections', [])
     else:
-        # For CNN method, use all_detections
-        all_detections = results.get('all_detections', [])
+        onset_detections = results.get('all_detections', [])
     
-    # Perform recovery analysis
-    recovery_results = analyze_fast_recovery(signal_data, movement_phases, all_detections)
+    # Extract onset timestamps
+    onset_timestamps = [d['timestamp'] for d in onset_detections if d['detected']]
     
-    # Perform detection frequency histogram analysis
-    histogram_results = analyze_detection_frequency_histograms(signal_data, movement_phases, all_detections)
+    # Classify error intervals using error model
+    print(f"\n  Error Correction Analysis:")
+    print(f"  " + "="*30)
+    classification_results = classify_error_intervals(
+        error_model, device, signal_data, onset_timestamps,
+        interval_start_ms=interval_start_ms, interval_end_ms=interval_end_ms
+    )
     
-    # Add analysis results to main results
-    results['recovery_analysis'] = recovery_results
-    results['histogram_analysis'] = histogram_results
+    # Analyze error correction patterns
+    error_correction_results = analyze_error_correction(
+        signal_data, movement_phases, onset_detections, classification_results
+    )
+    
+    # Calculate corrected accuracies
+    corrected_accuracies = calculate_corrected_accuracies(
+        onset_detections, classification_results, movement_phases
+    )
+    
+    # Calculate onset-peak timing differences
+    onset_peak_differences = []
+    for i, (start_time, end_time) in enumerate(movement_phases):
+        # Find first onset detection in this movement phase
+        first_onset_in_phase = None
+        for onset_detection in onset_detections:
+            if onset_detection['detected'] and start_time <= onset_detection['timestamp'] <= end_time:
+                first_onset_in_phase = onset_detection['timestamp']
+                break
+        
+        if first_onset_in_phase is not None and i < len(peak_timestamps):
+            # Calculate timing difference: onset_time - peak_time
+            # Positive if onset is after peak, negative if onset is before peak
+            timing_diff = first_onset_in_phase - peak_timestamps[i]
+            onset_peak_differences.append(timing_diff)
+    
+    # Store results
+    results['classification_results'] = classification_results
+    results['error_correction_results'] = error_correction_results
+    results['corrected_accuracies'] = corrected_accuracies
+    results['onset_peak_differences'] = onset_peak_differences
     
     return results
 
 
 def visualize_participant_results(participant_name, signal_data, peak_timestamps, results, 
-                                window_size_ms=1162, peak_detection_ms=162, dataset_name="Unknown", method="cnn", save_all=False):
+                                window_size_ms=1162, peak_detection_ms=162, dataset_name="Unknown", method="cnn", save_all=False, pre_peak_ms=400, post_peak_ms=800):
     """Visualize evaluation results for a participant."""
     
     # Create movement phases for visualization (everything else is baseline)
-    movement_phases = create_movement_phases(peak_timestamps, pre_peak_ms=200, post_peak_ms=800)
+    movement_phases = create_movement_phases(peak_timestamps, pre_peak_ms=pre_peak_ms, post_peak_ms=post_peak_ms)
     
     # Get signal data
     signal_column = 'rms' if 'rms' in signal_data.columns else 'emg'
@@ -1223,7 +1897,7 @@ def visualize_participant_results(participant_name, signal_data, peak_timestamps
             peak_values.append(signal_values[closest_idx])
         
         plt.scatter(peak_timestamps, peak_values, 
-                   color='red', s=50, label=f'Actual Peaks ({len(peak_timestamps)})', zorder=5)
+                   color='red', s=50, label=f'Actual Muscle Activation Peaks', zorder=5)
     
     # Plot detections
     if method == "adaptive":
@@ -1268,7 +1942,7 @@ def visualize_participant_results(participant_name, signal_data, peak_timestamps
     plt.title('Detection Probabilities Over Time')
     plt.legend()
     plt.grid(True, alpha=0.3)
-    plt.ylim(0, 1)
+    plt.ylim(0, 1.4)
     
     # Plot 3: Detection delays histogram
     plt.subplot(3, 1, 3)
@@ -1300,7 +1974,7 @@ def visualize_participant_results(participant_name, signal_data, peak_timestamps
 
 
 def visualize_fast_recovery(participant_name, signal_data, peak_timestamps, recovery_results, 
-                           dataset_name="Unknown", method="cnn", save_all=False):
+                           dataset_name="Unknown", method="cnn", save_all=False, pre_peak_ms=400, post_peak_ms=800):
     """Visualize fast recovery analysis results."""
     
     if not recovery_results or recovery_results['summary']['total_false_positives'] == 0:
@@ -1308,7 +1982,7 @@ def visualize_fast_recovery(participant_name, signal_data, peak_timestamps, reco
         return
     
     # Create movement phases for visualization
-    movement_phases = create_movement_phases(peak_timestamps, pre_peak_ms=200, post_peak_ms=800)
+    movement_phases = create_movement_phases(peak_timestamps, pre_peak_ms=pre_peak_ms, post_peak_ms=post_peak_ms)
     
     # Get signal data
     signal_column = 'rms' if 'rms' in signal_data.columns else 'emg'
@@ -1365,7 +2039,7 @@ def visualize_fast_recovery(participant_name, signal_data, peak_timestamps, reco
                 peak_values.append(signal_values[closest_idx])
             
             ax.scatter(peak_times_in_range, peak_values, 
-                      color='red', s=50, label=f'Actual Peaks ({len(peak_times_in_range)})', zorder=5)
+                      color='red', s=50, label=f'Actual Muscle Activation Peaks', zorder=5)
         
         # Plot detections in recovery window
         recovery_detections = recovery_analysis['recovery_detections']
@@ -1402,165 +2076,320 @@ def visualize_fast_recovery(participant_name, signal_data, peak_timestamps, reco
 
 
 def main():
-    """Main fast recovery analysis function."""
-    print("Fast Recovery Analysis")
-    print("=" * 40)
-    print("Analyzing recovery patterns after false positive detections")
-    print("Tracking detection behavior in 500ms following baseline false positives")
-    print("=" * 40)
+    """Main error correction analysis function - ALS Block 3 (35s-47s) only."""
+    print("Error Correction Analysis - ALS Block 3 (35s-47s)")
+    print("=" * 50)
+    print("Analyzing error correction patterns using onset detection and error model classification")
+    print("Classifying 250ms-500ms intervals after onsets using 200ms windows for error correction")
+    print("=" * 50)
     
-    # Ask user if they want to save all figures
-    save_all_figures = input("\nSave all figures automatically? (y/n): ").strip().lower()
-    save_all = save_all_figures in ['y', 'yes']
-    if save_all:
-        print("✓ All figures will be saved automatically")
-    else:
-        print("✓ You will be asked before saving each figure")
+    # Set parameters (no user input required)
+    save_all = False  # Don't save figures automatically
+    interval_start_ms = 200
+    interval_end_ms = 500
+    pre_peak_ms = 500
+    post_peak_ms = 800
     
-    # Ask user to choose dataset
-    print("\nChoose dataset to evaluate:")
-    print("1. Healthy participants (P12-P15)")
-    print("2. ALS patients (last two blocks)")
+    print(f"✓ Error correction interval set to {interval_start_ms}-{interval_end_ms}ms")
+    print(f"✓ Movement phase parameters set to {pre_peak_ms}ms before peak, {post_peak_ms}ms after peak")
     
-    while True:
-        choice = input("Enter your choice (1 or 2): ").strip()
-        if choice == '1':
-            dataset_name = "Healthy"
-            test_data = load_test_data()
-            break
-        elif choice == '2':
-            dataset_name = "ALS"
-            test_data = load_als_data()
-            break
-        else:
-            print("Please enter 1 for healthy data or 2 for ALS data.")
+    # Load only ALS block 3 data
+    print("\nLoading ALS Block 3 Data...")
+    test_data = load_als_data()
+    
+    if not test_data:
+        print("❌ Failed to load ALS test data")
+        return
+        
+    # Filter to only block 3
+    block3_data = [data for data in test_data if 'block3' in data['participant'].lower()]
+    
+    if not block3_data:
+        print("❌ No ALS block 3 data found")
+        return
+        
+    print(f"✓ Found ALS block 3 data: {block3_data[0]['participant']}")
     
     try:
-        if not test_data:
-            print(f"❌ Failed to load {dataset_name.lower()} test data")
+        # Use adaptive threshold method with lambda=2.0 (no user input)
+        method = "adaptive"
+        lambda_threshold = 2.0
+        model_path = None
+        model_dataset_name = "adaptive_threshold"
+        
+        # Select ALS-trained error model automatically
+        error_models_dir = 'trained_models'
+        error_model_files = glob.glob(os.path.join(error_models_dir, 'error_als*.pth'))
+        
+        if not error_model_files:
+            print("❌ No ALS-trained error model found")
             return
         
-        # Select detection method and model
-        model_selection = select_model()
-        if model_selection is None:
-            return
+        error_model_path = error_model_files[0]  # Use first available ALS model
+        error_model_name = os.path.basename(error_model_path)
+        print(f"✓ Using error model: {error_model_name}")
         
-        if len(model_selection) == 4:
-            model_path, model_dataset_name, method, lambda_threshold = model_selection
-        else:
-            model_path, model_dataset_name, method = model_selection
-            lambda_threshold = 2.0
-        
-        # Initialize model if using CNN
+        # Initialize models
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         model = None
-        if method == "cnn":
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            model = PeakDetectionCNN(input_length=1162, num_filters=64, dropout=0.3)
-            model.load_state_dict(torch.load(model_path, map_location=device))
-            model.to(device)
-            model.eval()
         
-            print(f"✓ Loaded trained model: {model_dataset_name}")
-            print(f"✓ Model path: {model_path}")
-            print(f"✓ Using device: {device}")
-        else:
-            print(f"✓ Using adaptive threshold detection")
-            print(f"✓ Lambda threshold: {lambda_threshold}")
+        # Load error model
+        error_model = MuscleActivityCNN(input_length=200, num_filters=64, dropout=0.3)
+        error_model.load_state_dict(torch.load(error_model_path, map_location=device))
+        error_model.to(device)
+        error_model.eval()
         
-        # Evaluate each participant
-        all_results = []
+        print(f"✓ Using adaptive threshold detection (lambda={lambda_threshold})")
+        print(f"✓ Loaded error model: {error_model_name}")
+        print(f"✓ Using device: {device}")
         
-        for participant_data in test_data:
-            results = evaluate_participant(model, participant_data, method=method, lambda_threshold=lambda_threshold, save_all=save_all)
-            results['participant'] = participant_data['participant']
-            results['signal_data'] = participant_data['signal_data']
-            results['peak_timestamps'] = participant_data['peak_timestamps']
-            all_results.append(results)
+        # Evaluate block 3 participant
+        participant_data = block3_data[0]
+        print(f"\nEvaluating {participant_data['participant']}...")
+        
+        results = evaluate_participant(
+            model, error_model, device, participant_data, 
+            method=method, lambda_threshold=lambda_threshold, 
+            save_all=save_all, interval_start_ms=interval_start_ms, 
+            interval_end_ms=interval_end_ms, pre_peak_ms=pre_peak_ms, 
+            post_peak_ms=post_peak_ms
+        )
+        
+        results['participant'] = participant_data['participant']
+        results['signal_data'] = participant_data['signal_data']
+        results['peak_timestamps'] = participant_data['peak_timestamps']
+        
+        # Create error correction visualization for 35s-47s section only
+        if 'classification_results' in results and 'error_correction_results' in results:
+            print(f"\nCreating visualization for 35s-47s section...")
             
-            # Create visualization
-            visualize_participant_results(
-                participant_data['participant'], 
-                participant_data['signal_data'],
-                participant_data['peak_timestamps'],
-                results,
-                dataset_name=model_dataset_name,
-                method=method,
-                save_all=save_all
+            # Filter data to 35s-47s range
+            signal_data = participant_data['signal_data']
+            peak_timestamps = participant_data['peak_timestamps']
+            
+            # Filter peaks to 35s-47s range
+            filtered_peaks = [p for p in peak_timestamps if 35.0 <= p <= 47.0]
+            print(f"✓ Found {len(filtered_peaks)} peaks in 35s-47s range")
+            
+            # Filter signal data to 35s-47s range
+            time_mask = (signal_data['timestamp'] >= 35.0) & (signal_data['timestamp'] <= 47.0)
+            filtered_signal_data = signal_data[time_mask].copy()
+            
+            # Filter onset detections to 35s-47s range
+            filtered_onsets = [d for d in results.get('all_detections', []) 
+                             if 35.0 <= d['timestamp'] <= 47.0 and d['detected']]
+            
+            # Filter classification results to 35s-47s range
+            filtered_classifications = [c for c in results['classification_results'] 
+                                      if 35.0 <= c['onset_time'] <= 47.0]
+            
+            # Create movement phases for filtered peaks
+            movement_phases = create_movement_phases(filtered_peaks, pre_peak_ms=pre_peak_ms, post_peak_ms=post_peak_ms)
+            
+            # Create custom visualization for 35s-47s section
+            visualize_35s_47s_section(
+                    participant_data['participant'], 
+                filtered_signal_data,
+                filtered_peaks,
+                filtered_onsets,
+                filtered_classifications,
+                movement_phases,
+                method=method
             )
-            
-            # Create detection frequency histogram visualization
-            if 'histogram_analysis' in results:
-                visualize_detection_frequency_histograms(
-                    participant_data['participant'],
-                    results['histogram_analysis'],
-                    dataset_name=model_dataset_name,
-                    method=method,
-                    save_all=save_all
-                )
-            
-            # Interactive false positive explorer
-            if 'recovery_analysis' in results:
-                interactive_false_positive_explorer(
-                    participant_data['participant'],
-                    participant_data['signal_data'],
-                    participant_data['peak_timestamps'],
-                    results['recovery_analysis'],
-                    dataset_name=model_dataset_name,
-                    method=method,
-                    save_all=save_all
-            )
         
-        # Print summary results
-        print(f"\n{'='*60}")
-        print(f"MOVEMENT PHASE EVALUATION SUMMARY - {dataset_name.upper()} DATA")
-        print(f"{'='*60}")
-        
-        print(f"\n{'Participant':<12} {'Baseline Acc':<12} {'Movement Acc':<12} {'Avg Delay (ms)':<15}")
-        print("-" * 60)
-        
-        total_baseline_correct = 0
-        total_baseline = 0
-        total_movement_correct = 0
-        total_movement = 0
-        all_delays = []
-        
-        for result in all_results:
-            print(f"{result['participant']:<12} {result['baseline_accuracy']:<12.3f} "
-                  f"{result['movement_phase_accuracy']:<12.3f} {result['average_delay_ms']:<15.1f}")
-            
-            total_baseline_correct += result['baseline_correct']
-            total_baseline += result['baseline_total']
-            total_movement_correct += result['movement_phase_correct']
-            total_movement += result['movement_phase_total']
-            all_delays.extend(result['detection_delays'])
-        
-        # Calculate overall averages
-        overall_baseline_acc = total_baseline_correct / total_baseline if total_baseline > 0 else 0
-        overall_movement_acc = total_movement_correct / total_movement if total_movement > 0 else 0
-        overall_avg_delay = np.mean([d * 1000 for d in all_delays]) if all_delays else 0
-        
-        print("-" * 60)
-        print(f"{'Overall':<12} {overall_baseline_acc:<12.3f} {overall_movement_acc:<12.3f} {overall_avg_delay:<15.1f}")
-        
-        print(f"\nDetailed Statistics:")
-        print(f"  Total baseline samples: {total_baseline}")
-        print(f"  Total movement phases: {total_movement}")
-        print(f"  Overall baseline accuracy: {overall_baseline_acc:.3f}")
-        print(f"  Overall movement phase accuracy: {overall_movement_acc:.3f}")
-        print(f"  Overall average delay: {overall_avg_delay:.1f} ms")
-        print(f"  Delay standard deviation: {np.std([d * 1000 for d in all_delays]):.1f} ms")
-        
-        print(f"\n✓ {dataset_name} data evaluation completed successfully!")
-        print(f"✓ Model used: {model_dataset_name}")
-        print(f"✓ Individual visualizations available for saving in: experiment_results/")
-        print(f"✓ Files: *_movement_phase_evaluation_{model_dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
-        print(f"✓ Files: *_detection_frequency_histogram_{model_dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
-        print(f"✓ Files: *_fp_*_analysis_{model_dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
+        print(f"\n✓ Analysis completed for {participant_data['participant']} (35s-47s section)")
         
     except Exception as e:
-        print(f"❌ Error during evaluation: {e}")
+        print(f"❌ Error during analysis: {e}")
         import traceback
         traceback.print_exc()
+
+
+def visualize_35s_47s_section(participant_name, signal_data, peak_timestamps, onset_detections, 
+                             classification_results, movement_phases, method="adaptive"):
+    """Create visualization for 35s-47s section only."""
+    
+    # Get signal data
+    signal_column = 'rms' if 'rms' in signal_data.columns else 'emg'
+    timestamps = signal_data['timestamp'].values
+    signal_values = signal_data[signal_column].values * 1000  # Convert to mV
+    
+    # Create the plot
+    fig, ax = plt.subplots(1, 1, figsize=(14, 8))
+    
+    # Plot signal
+    ax.plot(timestamps, signal_values, 'k-', alpha=0.8, linewidth=1.0, label='RMS EMG Signal')
+    
+    # Highlight movement phases (red background)
+    for i, (start_phase, end_phase) in enumerate(movement_phases):
+        ax.axvspan(start_phase, end_phase, alpha=0.2, color='red', 
+                   label='Intentional Muscle Activation' if i == 0 else "")
+    
+    # Plot actual peaks
+    if len(peak_timestamps) > 0:
+        peak_values = []
+        for peak_time in peak_timestamps:
+            closest_idx = np.argmin(np.abs(timestamps - peak_time))
+            peak_values.append(signal_values[closest_idx])
+        
+        ax.scatter(peak_timestamps, peak_values, color='red', s=80, 
+                  label=f'Actual Muscle Activation Peaks', zorder=5, marker='v')
+    
+    # Find first onset in each movement phase (grasp phases)
+    first_onsets_in_phases = []
+    for phase_idx, (start_phase, end_phase) in enumerate(movement_phases):
+        phase_onsets = [d for d in onset_detections 
+                       if start_phase <= d['timestamp'] <= end_phase]
+        
+        if phase_onsets:
+            first_onset = min(phase_onsets, key=lambda x: x['timestamp'])
+            first_onsets_in_phases.append(first_onset)
+        else:
+            # Look for closest onset before the phase
+            pre_phase_onsets = [d for d in onset_detections 
+                              if start_phase - 2.0 <= d['timestamp'] < start_phase]
+            if pre_phase_onsets:
+                first_onset = max(pre_phase_onsets, key=lambda x: x['timestamp'])
+                first_onsets_in_phases.append(first_onset)
+    
+    # Find first onset errors in rest phases (outside grasp phases)
+    error_detections = [c for c in classification_results if c.get('show_error_dot', False)]
+    first_onset_errors = []
+    
+    if len(error_detections) > 0:
+        # Group errors by time and find first error in each rest phase
+        error_times = [e['onset_time'] for e in error_detections]
+        
+        # Find rest phases (gaps between grasp phases)
+        rest_phases = []
+        if len(movement_phases) > 0:
+            # Before first grasp phase
+            if movement_phases[0][0] > 35.0:  # Only if we're showing from 35s
+                rest_phases.append((35.0, movement_phases[0][0]))
+            
+            # Between grasp phases
+            for i in range(len(movement_phases) - 1):
+                rest_start = movement_phases[i][1]
+                rest_end = movement_phases[i + 1][0]
+                if rest_end - rest_start > 0.5:  # Only if gap is significant
+                    rest_phases.append((rest_start, rest_end))
+            
+            # After last grasp phase
+            if movement_phases[-1][1] < 47.0:  # Only if we're showing until 47s
+                rest_phases.append((movement_phases[-1][1], 47.0))
+        
+        # Find first error in each rest phase
+        for rest_start, rest_end in rest_phases:
+            rest_errors = [e for e in error_detections 
+                          if rest_start <= e['onset_time'] <= rest_end]
+            if rest_errors:
+                first_error = min(rest_errors, key=lambda x: x['onset_time'])
+                first_onset_errors.append(first_error)
+    
+    # Set common y position for markers
+    marker_y = np.max(signal_values) * 0.75
+    
+    # Plot first onsets in grasp phases as green dots with dashed lines
+    if len(first_onsets_in_phases) > 0:
+        first_onset_times = [d['timestamp'] for d in first_onsets_in_phases]
+        
+        # Plot green dots
+        ax.scatter(first_onset_times, [marker_y] * len(first_onset_times), 
+                  color='green', s=120, 
+                  label=f'Onset Detections (Grasp Intentions)', 
+                  zorder=6, marker='o', edgecolors='darkgreen', linewidth=2)
+        
+        # Plot green dashed vertical lines
+        for i, onset_time in enumerate(first_onset_times):
+            ax.axvline(onset_time, color='green', linestyle='--', linewidth=3, alpha=0.9)
+        # Plot green dashed vertical lines
+        #for i, onset_time in enumerate(first_onset_times):
+        #    ax.axvline(onset_time, color='green', linestyle='--', linewidth=3, alpha=0.9,
+        #              label='Corrected Onset Detection Error' if i == 0 else "")
+       
+
+    # Plot corrected onset errors as blue dots with red crosses (only in rest phases)
+    error_detections = [c for c in classification_results if c.get('show_error_dot', False)]
+    
+    # Filter out errors that occur inside movement/grasp phases
+    rest_phase_errors = []
+    for error in error_detections:
+        error_time = error['onset_time']
+        is_in_grasp_phase = False
+        
+        # Check if error occurs inside any grasp phase
+        for start_phase, end_phase in movement_phases:
+            if start_phase <= error_time <= end_phase:
+                is_in_grasp_phase = True
+                break
+        
+        # Only include errors that are NOT in grasp phases
+        if not is_in_grasp_phase:
+            rest_phase_errors.append(error)
+    
+    if len(rest_phase_errors) > 0:
+        rest_error_times = [e['onset_time'] for e in rest_phase_errors]
+        
+        # Plot blue circles for rest phase errors only
+        ax.scatter(rest_error_times, [marker_y] * len(rest_error_times), 
+                  color='blue', s=120, 
+                  label=f'Corrected Onset Errors in Rest Phases', 
+                  zorder=6, marker='o', edgecolors='darkblue', linewidth=2)
+        
+        # Add red X markers for rest phase errors (crossed out)
+        # ax.scatter(rest_error_times, [marker_y] * len(rest_error_times), 
+        #          color='red', s=80, 
+        #          marker='x', linewidth=3, zorder=7)
+    
+    # Plot blue dashed vertical lines only for first onset errors in rest phases
+    #if len(first_onset_errors) > 0:
+    #    first_error_times = [e['onset_time'] for e in first_onset_errors]
+    #    for i, error_time in enumerate(first_error_times):
+    #        ax.axvline(error_time, color='blue', linestyle='--', linewidth=3, alpha=0.9)
+    
+    # Add vertical lines for movement phase boundaries
+    for start_phase, end_phase in movement_phases:
+        ax.axvline(start_phase, color='red', linestyle='--', alpha=0.5, linewidth=1)
+        ax.axvline(end_phase, color='red', linestyle='--', alpha=0.5, linewidth=1)
+    
+    # Customize the plot
+    ax.set_xlabel('Time (seconds)', fontsize=24)
+    ax.set_ylabel('RMS EMG (mV)', fontsize=24)
+    #ax.set_title(f'{participant_name}: Error Correction Analysis (35s - 47s)', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper right', fontsize=20)
+    
+    # Remove x-axis tick labels (time values)
+    ax.set_xticklabels([])
+    
+    # Increase y-axis tick label size
+    ax.tick_params(axis='y', labelsize=20)
+    
+    # Set x-axis limits
+    ax.set_xlim(35.0, 47.0)
+    ax.set_ylim(0, 12)  # Updated for mV scale (0.012 * 1000)
+    
+    # Add statistics text
+    #stats_text = f'Grasp Phases: {len(movement_phases)}\nActual Peaks: {len(peak_timestamps)}\nFirst Onsets in Grasp: {len(first_onsets_in_phases)}\nFirst Errors in Rest: {len(first_onset_errors)}'
+    #ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
+    #        verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
+    #        fontsize=10)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # Print summary
+    print(f"\nSummary for 35s-47s section:")
+    print(f"  Grasp phases: {len(movement_phases)}")
+    print(f"  Actual peaks: {len(peak_timestamps)}")
+    print(f"  First onsets in grasp phases: {len(first_onsets_in_phases)}")
+    print(f"  All corrected onset errors: {len(error_detections)}")
+    print(f"  Corrected errors in rest phases only: {len(rest_phase_errors)}")
+    print(f"  First onset errors in rest phases: {len(first_onset_errors)}")
+    
+    if len(first_onsets_in_phases) > 0 and len(first_onset_errors) > 0:
+        error_rate = len(first_onset_errors) / (len(first_onsets_in_phases) + len(first_onset_errors)) * 100
+        print(f"  Error rate: {error_rate:.1f}%")
 
 
 if __name__ == "__main__":

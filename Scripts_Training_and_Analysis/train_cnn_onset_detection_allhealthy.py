@@ -4,7 +4,7 @@
 
 This module implements a 1D CNN model to predict whether 1162ms windows
 contain a peak in the last 162ms or not. The model is trained on healthy 
-participants P1-P11 and evaluated on P12-P15 using all sliding windows
+participants P1-P15 and evaluated on P12-P15 using all sliding windows
 without class balancing.
 """
 
@@ -284,18 +284,18 @@ def load_peak_labels(peak_file):
 
 
 def load_healthy_training_data():
-    """Load healthy training data from P1-P11."""
-    print("Loading Healthy Training Data (P1-P11)")
+    """Load healthy training data from P1-P15."""
+    print("Loading Healthy Training Data (P1-P15)")
     print("=" * 40)
     
-    signal_dir = '../_data_for_ml/signal_data'
-    label_dir = '../_data_for_ml/label_data'
+    signal_dir = '../EMG_data/signal_data'
+    label_dir = '../EMG_data/label_data'
     
     all_signal_data = []
     all_peak_timestamps = []
     
-    # Load P1-P11
-    for participant_num in range(1, 12):
+    # Load P1-P15
+    for participant_num in range(1, 16):
         signal_file = os.path.join(signal_dir, f'RMS_healthy_P{participant_num}_34p81hz_processed_cleaned.csv')
         peak_file = os.path.join(label_dir, f'peaks_P{participant_num}_interactive_final.csv')
         
@@ -320,8 +320,8 @@ def load_als_training_data():
     print("Loading ALS Training Data (Block1 & Block2)")
     print("=" * 40)
     
-    signal_dir = '../_data_for_ml/signal_data'
-    label_dir = '../_data_for_ml/label_data'
+    signal_dir = '../EMG_data/signal_data'
+    label_dir = '../EMG_data/label_data'
     
     all_signal_data = []
     all_peak_timestamps = []
@@ -354,8 +354,8 @@ def load_sma_training_data():
     print("Loading SMA Training Data")
     print("=" * 30)
     
-    signal_dir = '../_data_for_ml/signal_data'
-    label_dir = '../_data_for_ml/label_data'
+    signal_dir = '../EMG_data/signal_data'
+    label_dir = '../EMG_data/label_data'
     
     all_signal_data = []
     all_peak_timestamps = []
@@ -420,8 +420,8 @@ def load_test_data():
     print("\nLoading Test Data (P12-P15)")
     print("=" * 30)
     
-    signal_dir = '../_data_for_ml/signal_data'
-    label_dir = '../_data_for_ml/label_data'
+    signal_dir = '../EMG_data/signal_data'
+    label_dir = '../EMG_data/label_data'
     
     test_data = []
     
@@ -946,12 +946,12 @@ def main():
     
     # Ask user to choose training data combination
     print("\nChoose training data combination:")
-    print("1. Healthy only (P1-P11)")
-    print("2. Healthy + ALS (P1-P11 + ALS Block1&2)")
+    print("1. Healthy only (P1-P15)")
+    print("2. Healthy + ALS (P1-P15 + ALS Block1&2)")
     print("3. ALS only (ALS Block1&2)")
     print("4. SMA only")
-    print("5. Healthy + SMA (P1-P11 + SMA)")
-    print("6. Healthy + SMA + ALS (P1-P11 + SMA + ALS Block1&2)")
+    print("5. Healthy + SMA (P1-P15 + SMA)")
+    print("6. Healthy + SMA + ALS (P1-P15 + SMA + ALS Block1&2)")
     
     while True:
         choice = input("Enter your choice (1-6): ").strip()
@@ -964,11 +964,11 @@ def main():
         # Load training data based on choice
         print(f"\nLoading training data for option {choice}...")
         
-        if choice == '1':  # Healthy only
+        if choice == '1':  # Healthy only (P1-P15)
             all_signal_data, all_peak_timestamps = load_healthy_training_data()
             dataset_name = "Healthy"
             
-        elif choice == '2':  # Healthy + ALS
+        elif choice == '2':  # Healthy + ALS (P1-P15 + ALS Block1&2)
             healthy_data = load_healthy_training_data()
             als_data = load_als_training_data()
             all_signal_data, all_peak_timestamps = combine_training_data(healthy_data, als_data)
@@ -982,13 +982,13 @@ def main():
             all_signal_data, all_peak_timestamps = load_sma_training_data()
             dataset_name = "SMA"
             
-        elif choice == '5':  # Healthy + SMA
+        elif choice == '5':  # Healthy + SMA (P1-P15 + SMA)
             healthy_data = load_healthy_training_data()
             sma_data = load_sma_training_data()
             all_signal_data, all_peak_timestamps = combine_training_data(healthy_data, sma_data)
             dataset_name = "Healthy + SMA"
             
-        elif choice == '6':  # Healthy + SMA + ALS
+        elif choice == '6':  # Healthy + SMA + ALS (P1-P15 + SMA + ALS Block1&2)
             healthy_data = load_healthy_training_data()
             sma_data = load_sma_training_data()
             als_data = load_als_training_data()

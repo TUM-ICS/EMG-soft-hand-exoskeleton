@@ -30,16 +30,16 @@ def load_als_blocks_3_4():
     print("Loading ALS data blocks 3 and 4...")
     
     # Define file paths for blocks 3 and 4
-    block3_file = '../_data_for_ml/signal_data/RMS_ALS_block3.csv'
-    block4_file = '../_data_for_ml/signal_data/RMS_ALS_block4.csv'
+    block3_file = '../EMG_data/signal_data/RMS_ALS_block3.csv'
+    block4_file = '../EMG_data/signal_data/RMS_ALS_block4.csv'
     
     # Load signal data
     block3_data = pd.read_csv(block3_file)
     block4_data = pd.read_csv(block4_file)
     
     # Load peak timestamps
-    block3_peaks_file = '../_data_for_ml/label_data/peaks_ALS_block3.csv'
-    block4_peaks_file = '../_data_for_ml/label_data/peaks_ALS_block4.csv'
+    block3_peaks_file = '../EMG_data/label_data/peaks_ALS_block3.csv'
+    block4_peaks_file = '../EMG_data/label_data/peaks_ALS_block4.csv'
     
     block3_peaks = pd.read_csv(block3_peaks_file)['timestamp'].values
     block4_peaks = pd.read_csv(block4_peaks_file)['timestamp'].values

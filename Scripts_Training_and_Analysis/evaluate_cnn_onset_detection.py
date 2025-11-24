@@ -154,8 +154,8 @@ def load_test_data():
     print("Loading Test Data (P12-P15)")
     print("=" * 30)
     
-    signal_dir = '../_data_for_ml/signal_data'
-    label_dir = '../_data_for_ml/label_data'
+    signal_dir = '../EMG_data/signal_data'
+    label_dir = '../EMG_data/label_data'
     
     test_data = []
     
@@ -187,8 +187,8 @@ def load_als_data():
     print("Loading ALS Data (Last Two Blocks)")
     print("=" * 35)
     
-    signal_dir = '../_data_for_ml/signal_data'
-    label_dir = '../_data_for_ml/label_data'
+    signal_dir = '../EMG_data/signal_data'
+    label_dir = '../EMG_data/label_data'
     
     als_data = []
     

@@ -1,11 +1,11 @@
 """
-1D CNN Model for Muscle Activity Detection in 200ms Windows
-==========================================================
+1D CNN Model for Peak Detection in 1162ms Windows with 162ms Peak Detection Zone
+==============================================================================
 
-This module implements a 1D CNN model to predict whether 200ms windows
-contain muscle activity or not. Activity phases are defined as -200ms to +800ms
-around detected activity peaks, with the rest being baseline. A training window
-is labeled as activity only if it is fully inside an activity phase.
+This module implements a 1D CNN model to predict whether 1162ms windows
+contain a peak in the last 162ms or not. The model is trained on healthy 
+participants P1-P11 and evaluated on P12-P15 using all sliding windows
+without class balancing.
 """
 
 import numpy as np
@@ -28,40 +28,45 @@ os.makedirs('experiment_results', exist_ok=True)
 os.makedirs('trained_models', exist_ok=True)
 
 
-class MuscleActivityCNN(nn.Module):
-    """1D CNN model for muscle activity detection in 200ms windows."""
+class PeakDetectionCNN(nn.Module):
+    """1D CNN model for peak detection in 1162ms windows with 162ms peak detection zone."""
     
-    def __init__(self, input_length=200, num_filters=64, dropout=0.3):
-        super(MuscleActivityCNN, self).__init__()
+    def __init__(self, input_length=1162, num_filters=64, dropout=0.3):
+        super(PeakDetectionCNN, self).__init__()
         
         self.input_length = input_length
         
-        # Simplified architecture for 200ms windows (about 7 samples at 34.81 Hz)
-        # Use smaller kernels and no pooling to preserve sequence length
-        
-        self.conv1 = nn.Conv1d(in_channels=1, out_channels=32, kernel_size=3, padding=1)
+        # 1D Convolutional layers with less aggressive pooling
+        self.conv1 = nn.Conv1d(in_channels=1, out_channels=32, kernel_size=5, padding=2)
         self.bn1 = nn.BatchNorm1d(32)
+        self.pool1 = nn.MaxPool1d(kernel_size=2)
         
         self.conv2 = nn.Conv1d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm1d(64)
+        self.pool2 = nn.MaxPool1d(kernel_size=2)
         
         self.conv3 = nn.Conv1d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
         self.bn3 = nn.BatchNorm1d(128)
+        self.pool3 = nn.MaxPool1d(kernel_size=2)
         
-        # Global average pooling to get fixed-size output regardless of input length
-        self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
+        self.conv4 = nn.Conv1d(in_channels=128, out_channels=256, kernel_size=3, padding=1)
+        self.bn4 = nn.BatchNorm1d(256)
+        # Remove the fourth pooling layer to prevent size becoming too small
         
         # Since we use global average pooling, the input to FC layers is just the number of channels
-        self.fc_input_size = 128  # Number of channels from conv3
+        self.fc_input_size = 256  # Number of channels from conv4
         
         # Fully connected layers
-        self.fc1 = nn.Linear(self.fc_input_size, 64)
+        self.fc1 = nn.Linear(self.fc_input_size, 256)
         self.dropout1 = nn.Dropout(dropout)
         
-        self.fc2 = nn.Linear(64, 32)
+        self.fc2 = nn.Linear(256, 128)
         self.dropout2 = nn.Dropout(dropout)
         
-        self.fc3 = nn.Linear(32, 1)
+        self.fc3 = nn.Linear(128, 64)
+        self.dropout3 = nn.Dropout(dropout)
+        
+        self.fc4 = nn.Linear(64, 1)
         
         # Activation functions
         self.relu = nn.ReLU()
@@ -74,73 +79,74 @@ class MuscleActivityCNN(nn.Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
+        x = self.pool1(x)
         
         # Second conv block
         x = self.conv2(x)
         x = self.bn2(x)
         x = self.relu(x)
+        x = self.pool2(x)
         
         # Third conv block
         x = self.conv3(x)
         x = self.bn3(x)
         x = self.relu(x)
+        x = self.pool3(x)
         
-        # Global average pooling
-        x = self.global_avg_pool(x)  # Shape: (batch_size, 128, 1)
-        x = x.squeeze(-1)  # Shape: (batch_size, 128)
+        # Fourth conv block (no pooling)
+        x = self.conv4(x)
+        x = self.bn4(x)
+        x = self.relu(x)
+        
+        # Global average pooling instead of flattening
+        x = torch.mean(x, dim=2)  # (batch_size, 256)
         
         # Fully connected layers
         x = self.fc1(x)
-        x = self.dropout1(x)
         x = self.relu(x)
+        x = self.dropout1(x)
         
         x = self.fc2(x)
-        x = self.dropout2(x)
         x = self.relu(x)
+        x = self.dropout2(x)
         
         x = self.fc3(x)
+        x = self.relu(x)
+        x = self.dropout3(x)
         
+        x = self.fc4(x)
         # Remove sigmoid activation since we're using BCEWithLogitsLoss
         
         return x.squeeze(-1)
 
 
-class MuscleActivityDataset(torch.utils.data.Dataset):
-    """Dataset for muscle activity detection in 200ms windows."""
+class PeakDetectionDataset(torch.utils.data.Dataset):
+    """Dataset for peak detection in 1162ms windows with 162ms peak detection zone."""
     
-    def __init__(self, signal_data, peak_timestamps, window_size_ms=200, sampling_rate=34.81):
+    def __init__(self, signal_data, peak_timestamps, window_size_ms=1162, peak_detection_ms=162, sampling_rate=34.81):
         """
         Args:
             signal_data: DataFrame with 'timestamp' and 'rms'/'emg' columns
             peak_timestamps: Array of peak timestamps in seconds
-            window_size_ms: Window size in milliseconds (default 200ms)
+            window_size_ms: Window size in milliseconds (default 1162ms)
+            peak_detection_ms: Peak detection zone in milliseconds (default 162ms)
             sampling_rate: Sampling rate in Hz
         """
         self.signal_data = signal_data
         self.peak_timestamps = peak_timestamps
         self.window_size_ms = window_size_ms
+        self.peak_detection_ms = peak_detection_ms
         self.sampling_rate = sampling_rate
         
         # Convert window size to samples
         self.window_size_samples = int(window_size_ms * sampling_rate / 1000)
-        
-        # Create activity phases (-200ms to +800ms around peaks)
-        self.activity_phases = self._create_activity_phases()
+        self.peak_detection_samples = int(peak_detection_ms * sampling_rate / 1000)
         
         # Create windows and labels
         self.windows, self.labels = self._create_windows_and_labels()
         
-    def _create_activity_phases(self):
-        """Create activity phases as -200ms to +800ms around each peak."""
-        activity_phases = []
-        for peak_time in self.peak_timestamps:
-            start_time = peak_time - 0.2  # -200ms
-            end_time = peak_time + 0.8    # +800ms
-            activity_phases.append((start_time, end_time))
-        return activity_phases
-        
     def _create_windows_and_labels(self):
-        """Create 500ms windows and label based on activity phase overlap."""
+        """Create 1162ms windows and check for peaks in the last 162ms."""
         timestamps = self.signal_data['timestamp'].values
         
         # Handle both 'rms' and 'emg' column names
@@ -160,21 +166,22 @@ class MuscleActivityDataset(torch.utils.data.Dataset):
             window_start_time = timestamps[i]
             window_end_time = timestamps[i + self.window_size_samples - 1]
             
-            # Check if more than half of the window is within an activity phase
-            is_activity = self._is_window_activity(window_start_time, window_end_time)
+            # Check if there's a peak in the last 162ms of the window
+            has_peak = self._check_peak_in_last_162ms(window_start_time, window_end_time)
             
             windows.append(window)
-            labels.append(1 if is_activity else 0)
+            labels.append(1 if has_peak else 0)
         
         return np.array(windows), np.array(labels)
     
-    def _is_window_activity(self, window_start_time, window_end_time):
-        """Check if the window is fully inside an activity phase."""
-        # Check if the entire window is contained within any activity phase
-        for phase_start, phase_end in self.activity_phases:
-            if phase_start <= window_start_time and window_end_time <= phase_end:
-                return True
+    def _check_peak_in_last_162ms(self, window_start_time, window_end_time):
+        """Check if there's a peak in the last 162ms of the window."""
+        # Calculate the time range for the last 162ms of the window
+        peak_detection_start_time = window_end_time - (self.peak_detection_ms / 1000.0)
         
+        for peak_time in self.peak_timestamps:
+            if peak_detection_start_time <= peak_time <= window_end_time:
+                return True
         return False
     
     def __len__(self):
@@ -281,8 +288,8 @@ def load_healthy_training_data():
     print("Loading Healthy Training Data (P1-P11)")
     print("=" * 40)
     
-    signal_dir = '../_data_for_ml/signal_data'
-    label_dir = '../_data_for_ml/label_data'
+    signal_dir = '../EMG_data/signal_data'
+    label_dir = '../EMG_data/label_data'
     
     all_signal_data = []
     all_peak_timestamps = []
@@ -313,8 +320,8 @@ def load_als_training_data():
     print("Loading ALS Training Data (Block1 & Block2)")
     print("=" * 40)
     
-    signal_dir = '../_data_for_ml/signal_data'
-    label_dir = '../_data_for_ml/label_data'
+    signal_dir = '../EMG_data/signal_data'
+    label_dir = '../EMG_data/label_data'
     
     all_signal_data = []
     all_peak_timestamps = []
@@ -347,8 +354,8 @@ def load_sma_training_data():
     print("Loading SMA Training Data")
     print("=" * 30)
     
-    signal_dir = '../_data_for_ml/signal_data'
-    label_dir = '../_data_for_ml/label_data'
+    signal_dir = '../EMG_data/signal_data'
+    label_dir = '../EMG_data/label_data'
     
     all_signal_data = []
     all_peak_timestamps = []
@@ -413,8 +420,8 @@ def load_test_data():
     print("\nLoading Test Data (P12-P15)")
     print("=" * 30)
     
-    signal_dir = '../_data_for_ml/signal_data'
-    label_dir = '../_data_for_ml/label_data'
+    signal_dir = '../EMG_data/signal_data'
+    label_dir = '../EMG_data/label_data'
     
     test_data = []
     
@@ -441,8 +448,8 @@ def load_test_data():
     return test_data
 
 
-def visualize_signal_characteristics(all_signal_data, all_peak_timestamps, window_size_ms=500, dataset_name="Unknown"):
-    """Visualize mean and variance of windows with/without muscle activity."""
+def visualize_signal_characteristics(all_signal_data, all_peak_timestamps, window_size_ms=1162, peak_detection_ms=162, dataset_name="Unknown"):
+    """Visualize mean and variance of windows with/without peaks in the activity area."""
     print(f"\nVisualizing Signal Characteristics")
     print("=" * 40)
     
@@ -455,7 +462,7 @@ def visualize_signal_characteristics(all_signal_data, all_peak_timestamps, windo
         print(f"Processing {participant_name} for visualization...")
         
         # Create dataset for this participant
-        dataset = MuscleActivityDataset(signal_data, all_peak_timestamps, window_size_ms)
+        dataset = PeakDetectionDataset(signal_data, all_peak_timestamps, window_size_ms, peak_detection_ms)
         
         all_windows.extend(dataset.windows)
         all_labels.extend(dataset.labels)
@@ -463,29 +470,31 @@ def visualize_signal_characteristics(all_signal_data, all_peak_timestamps, windo
     all_windows = np.array(all_windows)
     all_labels = np.array(all_labels)
     
-    # Separate windows with and without muscle activity
-    activity_windows = all_windows[all_labels == 1]
-    baseline_windows = all_windows[all_labels == 0]
+    # Separate windows with and without peaks
+    peak_windows = all_windows[all_labels == 1]
+    non_peak_windows = all_windows[all_labels == 0]
     
-    print(f"✓ Activity windows: {len(activity_windows)}")
-    print(f"✓ Baseline windows: {len(baseline_windows)}")
+    print(f"✓ Peak windows: {len(peak_windows)}")
+    print(f"✓ Non-peak windows: {len(non_peak_windows)}")
     
     # Calculate mean and variance for each time point
-    activity_mean = np.mean(activity_windows, axis=0)
-    activity_var = np.var(activity_windows, axis=0)
-    baseline_mean = np.mean(baseline_windows, axis=0)
-    baseline_var = np.var(baseline_windows, axis=0)
+    peak_mean = np.mean(peak_windows, axis=0)
+    peak_var = np.var(peak_windows, axis=0)
+    non_peak_mean = np.mean(non_peak_windows, axis=0)
+    non_peak_var = np.var(non_peak_windows, axis=0)
     
     # Create time axis (in milliseconds)
-    time_ms = np.linspace(0, window_size_ms, len(activity_mean))
+    time_ms = np.linspace(0, window_size_ms, len(peak_mean))
     
     # Create the visualization
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-    fig.suptitle('Signal Characteristics: Windows with vs without Muscle Activity', fontsize=16)
+    fig.suptitle('Signal Characteristics: Windows with vs without Peaks in Activity Area', fontsize=16)
     
     # Plot 1: Mean signals
-    axes[0, 0].plot(time_ms, activity_mean, 'r-', linewidth=2, label=f'Activity Windows (n={len(activity_windows)})')
-    axes[0, 0].plot(time_ms, baseline_mean, 'b-', linewidth=2, label=f'Baseline Windows (n={len(baseline_windows)})')
+    axes[0, 0].plot(time_ms, peak_mean, 'r-', linewidth=2, label=f'With Peaks (n={len(peak_windows)})')
+    axes[0, 0].plot(time_ms, non_peak_mean, 'b-', linewidth=2, label=f'Without Peaks (n={len(non_peak_windows)})')
+    axes[0, 0].axvline(x=window_size_ms - peak_detection_ms, color='gray', linestyle='--', alpha=0.7, label='Activity Area Start')
+    axes[0, 0].axvline(x=window_size_ms, color='gray', linestyle='-', alpha=0.7, label='Activity Area End')
     axes[0, 0].set_xlabel('Time (ms)')
     axes[0, 0].set_ylabel('Mean RMS EMG (V)')
     axes[0, 0].set_title('Mean Signal Comparison')
@@ -493,8 +502,10 @@ def visualize_signal_characteristics(all_signal_data, all_peak_timestamps, windo
     axes[0, 0].grid(True, alpha=0.3)
     
     # Plot 2: Variance signals
-    axes[0, 1].plot(time_ms, activity_var, 'r-', linewidth=2, label=f'Activity Windows (n={len(activity_windows)})')
-    axes[0, 1].plot(time_ms, baseline_var, 'b-', linewidth=2, label=f'Baseline Windows (n={len(baseline_windows)})')
+    axes[0, 1].plot(time_ms, peak_var, 'r-', linewidth=2, label=f'With Peaks (n={len(peak_windows)})')
+    axes[0, 1].plot(time_ms, non_peak_var, 'b-', linewidth=2, label=f'Without Peaks (n={len(non_peak_windows)})')
+    axes[0, 1].axvline(x=window_size_ms - peak_detection_ms, color='gray', linestyle='--', alpha=0.7, label='Activity Area Start')
+    axes[0, 1].axvline(x=window_size_ms, color='gray', linestyle='-', alpha=0.7, label='Activity Area End')
     axes[0, 1].set_xlabel('Time (ms)')
     axes[0, 1].set_ylabel('Variance RMS EMG (V²)')
     axes[0, 1].set_title('Variance Signal Comparison')
@@ -502,22 +513,26 @@ def visualize_signal_characteristics(all_signal_data, all_peak_timestamps, windo
     axes[0, 1].grid(True, alpha=0.3)
     
     # Plot 3: Mean difference
-    mean_diff = activity_mean - baseline_mean
+    mean_diff = peak_mean - non_peak_mean
     axes[1, 0].plot(time_ms, mean_diff, 'g-', linewidth=2, label='Mean Difference')
+    axes[1, 0].axvline(x=window_size_ms - peak_detection_ms, color='gray', linestyle='--', alpha=0.7, label='Activity Area Start')
+    axes[1, 0].axvline(x=window_size_ms, color='gray', linestyle='-', alpha=0.7, label='Activity Area End')
     axes[1, 0].axhline(y=0, color='black', linestyle='-', alpha=0.3)
     axes[1, 0].set_xlabel('Time (ms)')
     axes[1, 0].set_ylabel('Mean Difference (V)')
-    axes[1, 0].set_title('Mean Signal Difference (Activity - Baseline)')
+    axes[1, 0].set_title('Mean Signal Difference (Peak - Non-Peak)')
     axes[1, 0].legend()
     axes[1, 0].grid(True, alpha=0.3)
     
     # Plot 4: Variance difference
-    var_diff = activity_var - baseline_var
+    var_diff = peak_var - non_peak_var
     axes[1, 1].plot(time_ms, var_diff, 'purple', linewidth=2, label='Variance Difference')
+    axes[1, 1].axvline(x=window_size_ms - peak_detection_ms, color='gray', linestyle='--', alpha=0.7, label='Activity Area Start')
+    axes[1, 1].axvline(x=window_size_ms, color='gray', linestyle='-', alpha=0.7, label='Activity Area End')
     axes[1, 1].axhline(y=0, color='black', linestyle='-', alpha=0.3)
     axes[1, 1].set_xlabel('Time (ms)')
     axes[1, 1].set_ylabel('Variance Difference (V²)')
-    axes[1, 1].set_title('Variance Signal Difference (Activity - Baseline)')
+    axes[1, 1].set_title('Variance Signal Difference (Peak - Non-Peak)')
     axes[1, 1].legend()
     axes[1, 1].grid(True, alpha=0.3)
     
@@ -529,15 +544,32 @@ def visualize_signal_characteristics(all_signal_data, all_peak_timestamps, windo
     
     # Print summary statistics
     print(f"\nSummary Statistics:")
-    print(f"  Activity windows mean RMS: {np.mean(activity_mean):.4f} ± {np.std(activity_mean):.4f} V")
-    print(f"  Baseline windows mean RMS: {np.mean(baseline_mean):.4f} ± {np.std(baseline_mean):.4f} V")
-    print(f"  Activity windows variance: {np.mean(activity_var):.6f} ± {np.std(activity_var):.6f} V²")
-    print(f"  Baseline windows variance: {np.mean(baseline_var):.6f} ± {np.std(baseline_var):.6f} V²")
+    print(f"  Peak windows mean RMS: {np.mean(peak_mean):.4f} ± {np.std(peak_mean):.4f} V")
+    print(f"  Non-peak windows mean RMS: {np.mean(non_peak_mean):.4f} ± {np.std(non_peak_mean):.4f} V")
+    print(f"  Peak windows variance: {np.mean(peak_var):.6f} ± {np.std(peak_var):.6f} V²")
+    print(f"  Non-peak windows variance: {np.mean(non_peak_var):.6f} ± {np.std(non_peak_var):.6f} V²")
     
-    print(f"\n✓ Visualization saved as: {signal_filename}")
+    # Activity area statistics
+    activity_start_idx = int((window_size_ms - peak_detection_ms) * len(peak_mean) / window_size_ms)
+    activity_end_idx = len(peak_mean)
+    
+    peak_activity_mean = np.mean(peak_mean[activity_start_idx:activity_end_idx])
+    non_peak_activity_mean = np.mean(non_peak_mean[activity_start_idx:activity_end_idx])
+    peak_activity_var = np.mean(peak_var[activity_start_idx:activity_end_idx])
+    non_peak_activity_var = np.mean(non_peak_var[activity_start_idx:activity_end_idx])
+    
+    print(f"\nActivity Area ({peak_detection_ms}ms) Statistics:")
+    print(f"  Peak windows mean in activity area: {peak_activity_mean:.4f} V")
+    print(f"  Non-peak windows mean in activity area: {non_peak_activity_mean:.4f} V")
+    print(f"  Peak windows variance in activity area: {peak_activity_var:.6f} V²")
+    print(f"  Non-peak windows variance in activity area: {non_peak_activity_var:.6f} V²")
+    print(f"  Mean difference in activity area: {peak_activity_mean - non_peak_activity_mean:.4f} V")
+    print(f"  Variance difference in activity area: {peak_activity_var - non_peak_activity_var:.6f} V²")
+    
+    print(f"\n✓ Visualization saved as: signal_characteristics_visualization.png")
 
 
-def create_training_dataset(all_signal_data, all_peak_timestamps, window_size_ms=200):
+def create_training_dataset(all_signal_data, all_peak_timestamps, window_size_ms=1162):
     """Create training dataset from all training participants using all sliding windows."""
     print(f"\nCreating Training Dataset (All Sliding Windows)")
     print("=" * 50)
@@ -550,34 +582,34 @@ def create_training_dataset(all_signal_data, all_peak_timestamps, window_size_ms
         print(f"Processing {participant_name}...")
         
         # Create dataset for this participant
-        dataset = MuscleActivityDataset(signal_data, all_peak_timestamps, window_size_ms)
+        dataset = PeakDetectionDataset(signal_data, all_peak_timestamps, window_size_ms)
         
         all_windows.extend(dataset.windows)
         all_labels.extend(dataset.labels)
         
         print(f"  ✓ Windows: {len(dataset.windows)}")
-        print(f"  ✓ Activity rate: {np.mean(dataset.labels)*100:.2f}%")
+        print(f"  ✓ Peak rate: {np.mean(dataset.labels)*100:.2f}%")
     
     all_windows = np.array(all_windows)
     all_labels = np.array(all_labels)
     
     print(f"\nCombined training dataset:")
     print(f"  ✓ Total windows: {len(all_windows)}")
-    print(f"  ✓ Overall activity rate: {np.mean(all_labels)*100:.2f}%")
-    print(f"  ✓ Activity windows: {np.sum(all_labels)}")
-    print(f"  ✓ Baseline windows: {len(all_labels) - np.sum(all_labels)}")
+    print(f"  ✓ Overall peak rate: {np.mean(all_labels)*100:.2f}%")
+    print(f"  ✓ Peak windows: {np.sum(all_labels)}")
+    print(f"  ✓ Non-peak windows: {len(all_labels) - np.sum(all_labels)}")
     print(f"  ✓ Class imbalance ratio: {(len(all_labels) - np.sum(all_labels)) / np.sum(all_labels):.2f}:1")
     
     return all_windows, all_labels
 
 
-def train_cnn_model(all_signal_data, all_peak_timestamps, window_size_ms=200, dataset_name="Unknown"):
+def train_cnn_model(all_signal_data, all_peak_timestamps, window_size_ms=1162, dataset_name="Unknown"):
     """Train the CNN model on training data."""
     print(f"\nTraining CNN Model")
     print("=" * 25)
     
     # Visualize signal characteristics before training
-    visualize_signal_characteristics(all_signal_data, all_peak_timestamps, window_size_ms, dataset_name=dataset_name)
+    visualize_signal_characteristics(all_signal_data, all_peak_timestamps, window_size_ms, peak_detection_ms=162, dataset_name=dataset_name)
     
     # Create training dataset (all sliding windows, no balancing)
     X_all, y_all = create_training_dataset(all_signal_data, all_peak_timestamps, window_size_ms)
@@ -608,7 +640,7 @@ def train_cnn_model(all_signal_data, all_peak_timestamps, window_size_ms=200, da
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"\nUsing device: {device}")
     
-    model = MuscleActivityCNN(input_length=window_size_ms, num_filters=64, dropout=0.3)
+    model = PeakDetectionCNN(input_length=window_size_ms, num_filters=64, dropout=0.3)
     
     trainer = CNNTrainer(model, device)
     
@@ -713,7 +745,7 @@ def train_cnn_model(all_signal_data, all_peak_timestamps, window_size_ms=200, da
     print(f"\n✓ Final validation loss: {val_loss:.4f}")
     
     # Save the trained model with dataset name
-    model_filename = f'error_{dataset_name.replace(" ", "_").replace("+", "plus").lower()}.pth'
+    model_filename = f'cnn_{dataset_name.replace(" ", "_").replace("+", "plus").lower()}.pth'
     model_path = os.path.join('trained_models', model_filename)
     torch.save(model.state_dict(), model_path)
     print(f"✓ Model saved as: {model_path}")
@@ -721,7 +753,7 @@ def train_cnn_model(all_signal_data, all_peak_timestamps, window_size_ms=200, da
     return model, trainer
 
 
-def evaluate_on_test_participants(model, test_data, window_size_ms=200):
+def evaluate_on_test_participants(model, test_data, window_size_ms=1162):
     """Evaluate the model on test participants P12-P15."""
     print(f"\nEvaluating CNN on Test Participants (P12-P15)")
     print("=" * 50)
@@ -741,12 +773,12 @@ def evaluate_on_test_participants(model, test_data, window_size_ms=200):
         print("-" * 20)
         
         # Create dataset
-        dataset = MuscleActivityDataset(signal_data, peak_timestamps, window_size_ms)
+        dataset = PeakDetectionDataset(signal_data, peak_timestamps, window_size_ms)
         
         print(f"✓ Created {len(dataset)} windows")
-        print(f"✓ Activity rate: {np.mean(dataset.labels)*100:.2f}%")
-        print(f"✓ Activity windows: {np.sum(dataset.labels)}")
-        print(f"✓ Baseline windows: {len(dataset.labels) - np.sum(dataset.labels)}")
+        print(f"✓ Peak rate: {np.mean(dataset.labels)*100:.2f}%")
+        print(f"✓ Peak windows: {np.sum(dataset.labels)}")
+        print(f"✓ Non-peak windows: {len(dataset.labels) - np.sum(dataset.labels)}")
         
         # Use all windows for evaluation (no balancing)
         X_eval = dataset.windows
@@ -823,104 +855,6 @@ def evaluate_on_test_participants(model, test_data, window_size_ms=200):
         })
     
     return all_results
-
-
-def visualize_evaluation_results(all_results, dataset_name="Unknown"):
-    """Visualize evaluation results with activity/baseline classification background colors."""
-    print(f"\nCreating Evaluation Visualizations")
-    print("=" * 35)
-    
-    for result in all_results:
-        participant_name = result['participant']
-        signal_data = result['signal_data']
-        peak_timestamps = result['peak_timestamps']
-        predictions = result['predictions']
-        targets = result['targets']
-        optimal_threshold = result['optimal_threshold']
-        
-        # Get signal data
-        timestamps = signal_data['timestamp'].values
-        signal_column = 'rms' if 'rms' in signal_data.columns else 'emg'
-        signal_values = signal_data[signal_column].values
-        
-        # Create binary predictions
-        pred_binary = (predictions > optimal_threshold).astype(int)
-        
-        # Create figure with subplots
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10))
-        
-        # Plot 1: Signal with activity/baseline background colors
-        ax1.plot(timestamps, signal_values, 'k-', alpha=0.8, linewidth=0.8, label='RMS EMG Signal')
-        
-        # Create activity phases for visualization
-        activity_phases = []
-        for peak_time in peak_timestamps:
-            activity_phases.append((peak_time - 0.2, peak_time + 0.8))  # -200ms to +800ms
-        
-        # Highlight activity phases
-        for start_time, end_time in activity_phases:
-            ax1.axvspan(start_time, end_time, alpha=0.3, color='red', 
-                       label='Activity Phase' if start_time == activity_phases[0][0] else "")
-        
-        # Plot actual peaks
-        if len(peak_timestamps) > 0:
-            peak_values = []
-            for peak_time in peak_timestamps:
-                closest_idx = np.argmin(np.abs(timestamps - peak_time))
-                peak_values.append(signal_values[closest_idx])
-            
-            ax1.scatter(peak_timestamps, peak_values, color='red', s=50, 
-                       label=f'Actual Peaks ({len(peak_timestamps)})', zorder=5)
-        
-        # Add background colors for detected activity/baseline windows
-        window_size_s = 0.2  # 200ms in seconds
-        window_centers = []
-        
-        for i in range(len(pred_binary)):
-            # Calculate window center time
-            window_center_idx = i + int(0.2 * 34.81 / 2)  # Approximate center
-            if window_center_idx < len(timestamps):
-                window_center_time = timestamps[window_center_idx]
-                window_centers.append(window_center_time)
-                
-                # Add background color based on prediction
-                window_start = window_center_time - window_size_s / 2
-                window_end = window_center_time + window_size_s / 2
-                
-                if pred_binary[i] == 1:  # Activity detected
-                    ax1.axvspan(window_start, window_end, alpha=0.2, color='red')
-                else:  # Baseline detected
-                    ax1.axvspan(window_start, window_end, alpha=0.2, color='blue')
-        
-        ax1.set_xlabel('Time (seconds)')
-        ax1.set_ylabel('RMS EMG (V)')
-        ax1.set_title(f'Activity Detection Results: {participant_name}\n'
-                     f'Red background = Activity detected, Blue background = Baseline detected')
-        ax1.legend()
-        ax1.grid(True, alpha=0.3)
-        
-        # Plot 2: Prediction probabilities over time
-        if window_centers:
-            ax2.plot(window_centers, predictions, 'b-', alpha=0.7, linewidth=1, label='Activity Probability')
-            ax2.axhline(y=optimal_threshold, color='r', linestyle='--', alpha=0.8, label=f'Threshold ({optimal_threshold:.3f})')
-            ax2.fill_between(window_centers, 0, optimal_threshold, alpha=0.2, color='blue', label='Baseline Region')
-            ax2.fill_between(window_centers, optimal_threshold, 1, alpha=0.2, color='red', label='Activity Region')
-        
-        ax2.set_xlabel('Time (seconds)')
-        ax2.set_ylabel('Activity Probability')
-        ax2.set_title(f'Activity Probabilities: {participant_name}')
-        ax2.legend()
-        ax2.grid(True, alpha=0.3)
-        ax2.set_ylim(0, 1)
-        
-        plt.tight_layout()
-        
-        # Save plot
-        plot_filename = f"experiment_results/error_{participant_name}_evaluation_{dataset_name}.png"
-        plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved evaluation plot: {plot_filename}")
-        
-        plt.show()
 
 
 def visualize_results(all_results, dataset_name="Unknown"):
@@ -1006,8 +940,8 @@ def visualize_results(all_results, dataset_name="Unknown"):
 
 def main():
     """Main function."""
-    print("CNN Muscle Activity Detection Training")
-    print("200ms windows with full activity phase labeling (no class balancing)")
+    print("CNN Peak Detection Training")
+    print("1162ms windows with 162ms peak detection zone (no class balancing)")
     print("=" * 70)
     
     # Ask user to choose training data combination
@@ -1077,15 +1011,12 @@ def main():
         # Evaluate on test participants
         all_results = evaluate_on_test_participants(model, test_data)
         
-        # Visualize results with activity/baseline background colors
-        visualize_evaluation_results(all_results, dataset_name)
-        
         # Visualize results
         visualize_results(all_results, dataset_name)
         
         # Print summary
         print(f"\n{'='*70}")
-        print(f"CNN MUSCLE ACTIVITY DETECTION TRAINING AND EVALUATION COMPLETED")
+        print(f"CNN PEAK DETECTION TRAINING AND EVALUATION COMPLETED")
         print(f"Training Dataset: {dataset_name}")
         print(f"{'='*70}")
         
@@ -1109,7 +1040,7 @@ def main():
               f"{avg_recall:<10.3f} {avg_f1:<10.3f} {avg_auc:<8.3f}")
         
         print(f"\n✓ Files saved:")
-        print(f"  - trained_models/error_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.pth")
+        print(f"  - trained_models/cnn_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.pth")
         print(f"  - experiment_results/training_curves_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
         print(f"  - experiment_results/signal_characteristics_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
         print(f"  - experiment_results/cnn_p*_peak_detection_results_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
