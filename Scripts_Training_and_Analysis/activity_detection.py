@@ -2,7 +2,7 @@
 Activity Detection Script
 ========================
 
-This script uses a trained error detection model to classify ALS data blocks 3 and 4
+This script uses a trained error detection model to classify ALS data blocks 3 and 4 (test set)
 into activity and baseline phases using 200ms detection windows. It visualizes the 
 results with real peaks marked.
 """
@@ -71,7 +71,7 @@ def load_trained_model(model_path):
     model.to(device)
     model.eval()
     
-    print(f"✓ Model loaded successfully on {device}")
+    print(f"Model loaded successfully on {device}")
     return model, device
 
 
@@ -144,7 +144,7 @@ def create_activity_phases_from_predictions(window_centers, predictions, min_act
         if activity_duration >= min_activity_duration_s:
             activity_phases.append((activity_start, window_centers[-1]))
     
-    print(f"✓ Created {len(activity_phases)} activity phases")
+    print(f"Created {len(activity_phases)} activity phases")
     return activity_phases
 
 
@@ -206,7 +206,7 @@ def visualize_activity_detection(participant_name, signal_data, peak_timestamps,
     # Save plot
     plot_filename = f"experiment_results/{participant_name}_activity_detection_{model_name}.png"
     plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
-    print(f"✓ Saved plot: {plot_filename}")
+    print(f"Saved plot: {plot_filename}")
     
     plt.show()
     
@@ -216,12 +216,12 @@ def visualize_activity_detection(participant_name, signal_data, peak_timestamps,
     activity_percentage = (total_activity_time / total_time) * 100
     
     print(f"\nActivity Detection Statistics:")
-    print(f"  Total time: {total_time:.2f}s")
-    print(f"  Activity phases: {len(activity_phases)}")
-    print(f"  Total activity time: {total_activity_time:.2f}s")
-    print(f"  Activity percentage: {activity_percentage:.1f}%")
-    print(f"  Real peaks: {len(peak_timestamps)}")
-    print(f"  Average probability: {np.mean(probabilities):.3f}")
+    print(f" Total time: {total_time:.2f}s")
+    print(f" Activity phases: {len(activity_phases)}")
+    print(f" Total activity time: {total_activity_time:.2f}s")
+    print(f" Activity percentage: {activity_percentage:.1f}%")
+    print(f" Real peaks: {len(peak_timestamps)}")
+    print(f" Average probability: {np.mean(probabilities):.3f}")
 
 
 def main():
@@ -235,7 +235,7 @@ def main():
     # Load trained model
     model_path = 'trained_models/error_als.pth'
     if not os.path.exists(model_path):
-        print(f"❌ Model file not found: {model_path}")
+        print(f"Model file not found: {model_path}")
         print("Please train the model first using train_cnn_error.py")
         return
     

@@ -268,7 +268,7 @@ def load_signal_data(signal_file):
         df = pd.read_csv(signal_file)
         return df
     except Exception as e:
-        print(f"❌ Error loading signal data: {e}")
+        print(f"Error loading signal data: {e}")
         return None
 
 
@@ -279,7 +279,7 @@ def load_peak_labels(peak_file):
         peak_timestamps = df['timestamp'].values
         return peak_timestamps
     except Exception as e:
-        print(f"❌ Error loading peak labels: {e}")
+        print(f"Error loading peak labels: {e}")
         return None
 
 
@@ -305,9 +305,9 @@ def load_healthy_training_data():
         if signal_data is not None and peak_timestamps is not None:
             all_signal_data.append(signal_data)
             all_peak_timestamps.extend(peak_timestamps)
-            print(f"✓ P{participant_num}: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
+            print(f"P{participant_num}: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
         else:
-            print(f"❌ Failed to load P{participant_num}")
+            print(f"Failed to load P{participant_num}")
     
     print(f"\nTotal healthy participants: {len(all_signal_data)}")
     print(f"Total healthy peaks: {len(all_peak_timestamps)}")
@@ -370,7 +370,7 @@ def load_sma_training_data():
     if signal_data is not None and peak_timestamps is not None:
         all_signal_data.append(signal_data)
         all_peak_timestamps.extend(peak_timestamps)
-        print(f"✓ SMA: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
+        print(f"SMA: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
     else:
         print(f"Failed to load SMA data")
     
@@ -389,23 +389,23 @@ def combine_training_data(healthy_data=None, als_data=None, sma_data=None):
         healthy_signal, healthy_peaks = healthy_data
         all_signal_data.extend(healthy_signal)
         all_peak_timestamps.extend(healthy_peaks)
-        print(f"✓ Added {len(healthy_signal)} healthy participants with {len(healthy_peaks)} peaks")
+        print(f"Added {len(healthy_signal)} healthy participants with {len(healthy_peaks)} peaks")
     
     if als_data is not None:
         als_signal, als_peaks = als_data
         all_signal_data.extend(als_signal)
         all_peak_timestamps.extend(als_peaks)
-        print(f"✓ Added {len(als_signal)} ALS blocks with {len(als_peaks)} peaks")
+        print(f"Added {len(als_signal)} ALS blocks with {len(als_peaks)} peaks")
     
     if sma_data is not None:
         sma_signal, sma_peaks = sma_data
         all_signal_data.extend(sma_signal)
         all_peak_timestamps.extend(sma_peaks)
-        print(f"✓ Added {len(sma_signal)} SMA datasets with {len(sma_peaks)} peaks")
+        print(f"Added {len(sma_signal)} SMA datasets with {len(sma_peaks)} peaks")
     
     print(f"\nCombined training dataset:")
-    print(f"  Total participants/blocks: {len(all_signal_data)}")
-    print(f"  Total peaks: {len(all_peak_timestamps)}")
+    print(f" Total participants/blocks: {len(all_signal_data)}")
+    print(f" Total peaks: {len(all_peak_timestamps)}")
     
     return all_signal_data, all_peak_timestamps
 
@@ -439,7 +439,7 @@ def load_test_data():
                 'signal_data': signal_data,
                 'peak_timestamps': peak_timestamps
             })
-            print(f"✓ P{participant_num}: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
+            print(f"P{participant_num}: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
         else:
             print(f"Failed to load P{participant_num}")
     
@@ -474,8 +474,8 @@ def visualize_signal_characteristics(all_signal_data, all_peak_timestamps, windo
     peak_windows = all_windows[all_labels == 1]
     non_peak_windows = all_windows[all_labels == 0]
     
-    print(f"✓ Peak windows: {len(peak_windows)}")
-    print(f"✓ Non-peak windows: {len(non_peak_windows)}")
+    print(f"Peak windows: {len(peak_windows)}")
+    print(f"Non-peak windows: {len(non_peak_windows)}")
     
     # Calculate mean and variance for each time point
     peak_mean = np.mean(peak_windows, axis=0)
@@ -544,10 +544,10 @@ def visualize_signal_characteristics(all_signal_data, all_peak_timestamps, windo
     
     # Print summary statistics
     print(f"\nSummary Statistics:")
-    print(f"  Peak windows mean RMS: {np.mean(peak_mean):.4f} ± {np.std(peak_mean):.4f} V")
-    print(f"  Non-peak windows mean RMS: {np.mean(non_peak_mean):.4f} ± {np.std(non_peak_mean):.4f} V")
-    print(f"  Peak windows variance: {np.mean(peak_var):.6f} ± {np.std(peak_var):.6f} V²")
-    print(f"  Non-peak windows variance: {np.mean(non_peak_var):.6f} ± {np.std(non_peak_var):.6f} V²")
+    print(f" Peak windows mean RMS: {np.mean(peak_mean):.4f} ± {np.std(peak_mean):.4f} V")
+    print(f" Non-peak windows mean RMS: {np.mean(non_peak_mean):.4f} ± {np.std(non_peak_mean):.4f} V")
+    print(f" Peak windows variance: {np.mean(peak_var):.6f} ± {np.std(peak_var):.6f} V²")
+    print(f" Non-peak windows variance: {np.mean(non_peak_var):.6f} ± {np.std(non_peak_var):.6f} V²")
     
     # Activity area statistics
     activity_start_idx = int((window_size_ms - peak_detection_ms) * len(peak_mean) / window_size_ms)
@@ -559,14 +559,14 @@ def visualize_signal_characteristics(all_signal_data, all_peak_timestamps, windo
     non_peak_activity_var = np.mean(non_peak_var[activity_start_idx:activity_end_idx])
     
     print(f"\nActivity Area ({peak_detection_ms}ms) Statistics:")
-    print(f"  Peak windows mean in activity area: {peak_activity_mean:.4f} V")
-    print(f"  Non-peak windows mean in activity area: {non_peak_activity_mean:.4f} V")
-    print(f"  Peak windows variance in activity area: {peak_activity_var:.6f} V²")
-    print(f"  Non-peak windows variance in activity area: {non_peak_activity_var:.6f} V²")
-    print(f"  Mean difference in activity area: {peak_activity_mean - non_peak_activity_mean:.4f} V")
-    print(f"  Variance difference in activity area: {peak_activity_var - non_peak_activity_var:.6f} V²")
+    print(f" Peak windows mean in activity area: {peak_activity_mean:.4f} V")
+    print(f" Non-peak windows mean in activity area: {non_peak_activity_mean:.4f} V")
+    print(f" Peak windows variance in activity area: {peak_activity_var:.6f} V²")
+    print(f" Non-peak windows variance in activity area: {non_peak_activity_var:.6f} V²")
+    print(f" Mean difference in activity area: {peak_activity_mean - non_peak_activity_mean:.4f} V")
+    print(f" Variance difference in activity area: {peak_activity_var - non_peak_activity_var:.6f} V²")
     
-    print(f"\n✓ Visualization saved as: signal_characteristics_visualization.png")
+    print(f"\n Visualization saved as: signal_characteristics_visualization.png")
 
 
 def create_training_dataset(all_signal_data, all_peak_timestamps, window_size_ms=1162):
@@ -587,18 +587,18 @@ def create_training_dataset(all_signal_data, all_peak_timestamps, window_size_ms
         all_windows.extend(dataset.windows)
         all_labels.extend(dataset.labels)
         
-        print(f"  ✓ Windows: {len(dataset.windows)}")
-        print(f"  ✓ Peak rate: {np.mean(dataset.labels)*100:.2f}%")
+        print(f"  Windows: {len(dataset.windows)}")
+        print(f"  Peak rate: {np.mean(dataset.labels)*100:.2f}%")
     
     all_windows = np.array(all_windows)
     all_labels = np.array(all_labels)
     
     print(f"\nCombined training dataset:")
-    print(f"  ✓ Total windows: {len(all_windows)}")
-    print(f"  ✓ Overall peak rate: {np.mean(all_labels)*100:.2f}%")
-    print(f"  ✓ Peak windows: {np.sum(all_labels)}")
-    print(f"  ✓ Non-peak windows: {len(all_labels) - np.sum(all_labels)}")
-    print(f"  ✓ Class imbalance ratio: {(len(all_labels) - np.sum(all_labels)) / np.sum(all_labels):.2f}:1")
+    print(f"  Total windows: {len(all_windows)}")
+    print(f"  Overall peak rate: {np.mean(all_labels)*100:.2f}%")
+    print(f"  Peak windows: {np.sum(all_labels)}")
+    print(f"  Non-peak windows: {len(all_labels) - np.sum(all_labels)}")
+    print(f"  Class imbalance ratio: {(len(all_labels) - np.sum(all_labels)) / np.sum(all_labels):.2f}:1")
     
     return all_windows, all_labels
 
@@ -619,8 +619,8 @@ def train_cnn_model(all_signal_data, all_peak_timestamps, window_size_ms=1162, d
         X_all, y_all, test_size=0.2, random_state=42, stratify=y_all
     )
     
-    print(f"✓ Training: {len(X_train)} windows ({np.mean(y_train)*100:.2f}% peaks)")
-    print(f"✓ Validation: {len(X_val)} windows ({np.mean(y_val)*100:.2f}% peaks)")
+    print(f"Training: {len(X_train)} windows ({np.mean(y_train)*100:.2f}% peaks)")
+    print(f"Validation: {len(X_val)} windows ({np.mean(y_val)*100:.2f}% peaks)")
     
     # Create datasets
     train_dataset = TensorDataset(
@@ -659,8 +659,8 @@ def train_cnn_model(all_signal_data, all_peak_timestamps, window_size_ms=1162, d
     optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
     
-    print(f"✓ Class weights: {class_weights}")
-    print(f"✓ Using weighted BCE loss for imbalanced classes")
+    print(f"Class weights: {class_weights}")
+    print(f"Using weighted BCE loss for imbalanced classes")
     
     # Training loop
     print(f"\nTraining Model (User-controlled stopping every 50 epochs)")
@@ -742,13 +742,13 @@ def train_cnn_model(all_signal_data, all_peak_timestamps, window_size_ms=1162, d
     plt.savefig(curves_path, dpi=300, bbox_inches='tight')
     plt.show()
     
-    print(f"\n✓ Final validation loss: {val_loss:.4f}")
+    print(f"\n Final validation loss: {val_loss:.4f}")
     
     # Save the trained model with dataset name
     model_filename = f'cnn_{dataset_name.replace(" ", "_").replace("+", "plus").lower()}.pth'
     model_path = os.path.join('trained_models', model_filename)
     torch.save(model.state_dict(), model_path)
-    print(f"✓ Model saved as: {model_path}")
+    print(f"Model saved as: {model_path}")
     
     return model, trainer
 
@@ -775,16 +775,16 @@ def evaluate_on_test_participants(model, test_data, window_size_ms=1162):
         # Create dataset
         dataset = PeakDetectionDataset(signal_data, peak_timestamps, window_size_ms)
         
-        print(f"✓ Created {len(dataset)} windows")
-        print(f"✓ Peak rate: {np.mean(dataset.labels)*100:.2f}%")
-        print(f"✓ Peak windows: {np.sum(dataset.labels)}")
-        print(f"✓ Non-peak windows: {len(dataset.labels) - np.sum(dataset.labels)}")
+        print(f"Created {len(dataset)} windows")
+        print(f"Peak rate: {np.mean(dataset.labels)*100:.2f}%")
+        print(f"Peak windows: {np.sum(dataset.labels)}")
+        print(f"Non-peak windows: {len(dataset.labels) - np.sum(dataset.labels)}")
         
         # Use all windows for evaluation (no balancing)
         X_eval = dataset.windows
         y_eval = dataset.labels
         
-        print(f"  Using all {len(X_eval)} windows for evaluation")
+        print(f" Using all {len(X_eval)} windows for evaluation")
         
         # Create data loader
         test_loader = DataLoader(
@@ -833,12 +833,12 @@ def evaluate_on_test_participants(model, test_data, window_size_ms=1162):
         f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
         auc_score = roc_auc_score(all_targets, all_predictions)
         
-        print(f"  Optimal threshold: {optimal_threshold:.3f}")
-        print(f"  Accuracy: {accuracy:.2f}%")
-        print(f"  Precision: {precision:.3f}")
-        print(f"  Recall: {recall:.3f}")
-        print(f"  F1-Score: {f1_score:.3f}")
-        print(f"  AUC Score: {auc_score:.3f}")
+        print(f" Optimal threshold: {optimal_threshold:.3f}")
+        print(f" Accuracy: {accuracy:.2f}%")
+        print(f" Precision: {precision:.3f}")
+        print(f" Recall: {recall:.3f}")
+        print(f" F1-Score: {f1_score:.3f}")
+        print(f" AUC Score: {auc_score:.3f}")
         
         all_results.append({
             'participant': participant_name,
@@ -935,7 +935,7 @@ def visualize_results(all_results, dataset_name="Unknown"):
         plt.savefig(result_path, dpi=300, bbox_inches='tight')
         plt.show()
         
-        print(f"✓ {participant_name} visualization saved as {result_filename}")
+        print(f"{participant_name} visualization saved as {result_filename}")
 
 
 def main():
@@ -1039,11 +1039,11 @@ def main():
         print(f"{'Average':<12} {avg_accuracy:<10.2f} {avg_precision:<10.3f} "
               f"{avg_recall:<10.3f} {avg_f1:<10.3f} {avg_auc:<8.3f}")
         
-        print(f"\n✓ Files saved:")
-        print(f"  - trained_models/cnn_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.pth")
-        print(f"  - experiment_results/training_curves_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
-        print(f"  - experiment_results/signal_characteristics_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
-        print(f"  - experiment_results/cnn_p*_peak_detection_results_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
+        print(f"\n Files saved:")
+        print(f" - trained_models/cnn_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.pth")
+        print(f" - experiment_results/training_curves_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
+        print(f" - experiment_results/signal_characteristics_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
+        print(f" - experiment_results/cnn_p*_peak_detection_results_{dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
         
     except Exception as e:
         print(f"Error: {e}")

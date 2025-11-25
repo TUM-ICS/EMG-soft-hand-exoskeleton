@@ -145,10 +145,10 @@ def load_trained_model(model_path):
     # Initialize appropriate model
     if model_type == 'error':
         model = MuscleActivityCNN(input_length=window_size_ms, num_filters=64, dropout=0.3)
-        print(f"✓ Detected MuscleActivityCNN model (window size: {window_size_ms}ms)")
+        print(f"Detected MuscleActivityCNN model (window size: {window_size_ms}ms)")
     else:  # onset
         model = PeakDetectionCNN(input_length=window_size_ms, num_filters=64, dropout=0.3)
-        print(f"✓ Detected PeakDetectionCNN model (window size: {window_size_ms}ms)")
+        print(f"Detected PeakDetectionCNN model (window size: {window_size_ms}ms)")
     
     # Load model weights
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -156,7 +156,7 @@ def load_trained_model(model_path):
     model.to(device)
     model.eval()
     
-    print(f"✓ Model loaded successfully on {device}")
+    print(f"Model loaded successfully on {device}")
     return model, device, model_type, window_size_ms
 
 
@@ -182,7 +182,7 @@ def load_test_data():
             'signal_data': block3_data,
             'peak_timestamps': block3_peaks
         })
-        print(f"✓ Loaded ALS Block 3: {len(block3_data)} samples, {len(block3_peaks)} peaks")
+        print(f"Loaded ALS Block 3: {len(block3_data)} samples, {len(block3_peaks)} peaks")
     
     # Load block 4
     if os.path.exists(block4_file):
@@ -193,7 +193,7 @@ def load_test_data():
             'signal_data': block4_data,
             'peak_timestamps': block4_peaks
         })
-        print(f"✓ Loaded ALS Block 4: {len(block4_data)} samples, {len(block4_peaks)} peaks")
+        print(f"Loaded ALS Block 4: {len(block4_data)} samples, {len(block4_peaks)} peaks")
     
     return test_data
 
@@ -362,7 +362,7 @@ def visualize_gradcam_results(results, participant_name, signal_data, peak_times
         ax.axvline(center_time, color='green', linestyle='--', alpha=0.5, linewidth=1)
         
         # Title with prediction info
-        status = "✓" if correct else "✗"
+        status = "" if correct else "✗"
         title = f"{status} True: {'Activity' if label == 1 else 'Baseline'} | "
         title += f"Pred: {'Activity' if prediction == 1 else 'Baseline'} ({probability:.3f})"
         ax.set_title(title, fontsize=10, fontweight='bold' if not correct else 'normal')
@@ -379,7 +379,7 @@ def visualize_gradcam_results(results, participant_name, signal_data, peak_times
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved Grad-CAM visualization: {save_path}")
+        print(f"Saved Grad-CAM visualization: {save_path}")
     
     plt.show()
 
@@ -461,11 +461,11 @@ def analyze_temporal_importance_patterns(results):
         if stat is None:
             continue
         print(f"\n{stat['name']} (n={stat['count']}):")
-        print(f"  Average peak importance position: {stat['avg_peak_position']:.2f} ± {stat['std_peak_position']:.2f} (0=start, 1=end)")
-        print(f"  Early window importance: {stat['early_importance']:.3f}")
-        print(f"  Middle window importance: {stat['middle_importance']:.3f}")
-        print(f"  Late window importance: {stat['late_importance']:.3f}")
-        print(f"  Total importance: {stat['total_importance']:.3f}")
+        print(f" Average peak importance position: {stat['avg_peak_position']:.2f} ± {stat['std_peak_position']:.2f} (0=start, 1=end)")
+        print(f" Early window importance: {stat['early_importance']:.3f}")
+        print(f" Middle window importance: {stat['middle_importance']:.3f}")
+        print(f" Late window importance: {stat['late_importance']:.3f}")
+        print(f" Total importance: {stat['total_importance']:.3f}")
     
     return stats
 
@@ -548,7 +548,7 @@ def visualize_average_importance_patterns(stats, save_path=None):
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved pattern analysis: {save_path}")
+        print(f"Saved pattern analysis: {save_path}")
     
     plt.show()
 
@@ -567,7 +567,7 @@ def main():
     test_data = load_test_data()
     
     if not test_data:
-        print("❌ No test data loaded")
+        print(" No test data loaded")
         return
     
     # Analyze each participant/block

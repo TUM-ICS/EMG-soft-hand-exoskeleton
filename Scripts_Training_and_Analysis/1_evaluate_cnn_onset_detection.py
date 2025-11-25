@@ -35,12 +35,12 @@ def list_available_models():
     """List all available trained models."""
     models_dir = 'trained_models'
     if not os.path.exists(models_dir):
-        print(f"❌ No trained_models directory found")
+        print(f"No trained_models directory found")
         return []
     
     model_files = glob.glob(os.path.join(models_dir, 'cnn_*.pth'))
     if not model_files:
-        print(f"❌ No trained models found in {models_dir}")
+        print(f"No trained models found in {models_dir}")
         return []
     
     # Extract model names and sort them
@@ -73,7 +73,7 @@ def select_model():
             
             if choice == "1":
                 if not available_models:
-                    print("❌ No trained models available. Please train a model first.")
+                    print(" No trained models available. Please train a model first.")
                     return None, None, "cnn"
                 
                 print("\nAvailable trained models:")
@@ -87,18 +87,18 @@ def select_model():
                         model_choice = int(input(f"\nSelect model (1-{len(available_models)}): ")) - 1
                         if 0 <= model_choice < len(available_models):
                             selected_model_path, selected_dataset_name = available_models[model_choice]
-                            print(f"✓ Selected: {selected_dataset_name}")
+                            print(f"Selected: {selected_dataset_name}")
                             return selected_model_path, selected_dataset_name, "cnn"
                         else:
                             print(f"Please enter a number between 1 and {len(available_models)}")
                     except ValueError:
                         print("Please enter a valid number")
                     except KeyboardInterrupt:
-                        print("\n❌ Operation cancelled")
+                        print("\n Operation cancelled")
                         return None, None, "cnn"
                         
             elif choice == "2":
-                print("✓ Selected adaptive threshold detection")
+                print(" Selected adaptive threshold detection")
                 # Ask for lambda threshold
                 while True:
                     try:
@@ -110,21 +110,21 @@ def select_model():
                         if lambda_threshold > 0:
                             break
                         else:
-                            print("❌ Lambda threshold must be positive")
+                            print(" Lambda threshold must be positive")
                     except ValueError:
-                        print("❌ Please enter a valid number")
+                        print(" Please enter a valid number")
                     except KeyboardInterrupt:
-                        print("\n❌ Operation cancelled")
+                        print("\n Operation cancelled")
                         return None, None, "cnn"
                 
-                print(f"✓ Lambda threshold set to: {lambda_threshold}")
+                print(f"Lambda threshold set to: {lambda_threshold}")
                 return None, f"adaptive_threshold_lambda_{lambda_threshold}", "adaptive", lambda_threshold
             else:
-                print("❌ Please enter 1 or 2")
+                print(" Please enter 1 or 2")
         except ValueError:
-            print("❌ Please enter a valid number")
+            print(" Please enter a valid number")
         except KeyboardInterrupt:
-            print("\n❌ Operation cancelled")
+            print("\n Operation cancelled")
             return None, None, "cnn"
 
 
@@ -134,7 +134,7 @@ def load_signal_data(signal_file):
         df = pd.read_csv(signal_file)
         return df
     except Exception as e:
-        print(f"❌ Error loading signal data: {e}")
+        print(f"Error loading signal data: {e}")
         return None
 
 
@@ -145,7 +145,7 @@ def load_peak_labels(peak_file):
         peak_timestamps = df['timestamp'].values
         return peak_timestamps
     except Exception as e:
-        print(f"❌ Error loading peak labels: {e}")
+        print(f"Error loading peak labels: {e}")
         return None
 
 
@@ -173,9 +173,9 @@ def load_test_data():
                 'signal_data': signal_data,
                 'peak_timestamps': peak_timestamps
             })
-            print(f"✓ P{participant_num}: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
+            print(f"P{participant_num}: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
         else:
-            print(f"❌ Failed to load P{participant_num}")
+            print(f"Failed to load P{participant_num}")
     
     print(f"\nTotal test participants: {len(test_data)}")
     
@@ -208,9 +208,9 @@ def load_als_data():
                 'signal_data': signal_data,
                 'peak_timestamps': peak_timestamps
             })
-            print(f"✓ ALS {block}: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
+            print(f"ALS {block}: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
         else:
-            print(f"❌ Failed to load ALS {block}")
+            print(f"Failed to load ALS {block}")
     
     print(f"\nTotal ALS blocks: {len(als_data)}")
     
@@ -284,8 +284,8 @@ def create_movement_phases(peak_timestamps, pre_peak_ms=500, post_peak_ms=800):
         movement_phases.append((start_time, end_time))
     
     # Debug information
-    print(f"  Created {len(movement_phases)} movement phases (-{pre_peak_ms}ms to +{post_peak_ms}ms)")
-    print(f"  Everything else will be treated as baseline")
+    print(f" Created {len(movement_phases)} movement phases (-{pre_peak_ms}ms to +{post_peak_ms}ms)")
+    print(f" Everything else will be treated as baseline")
     
     return movement_phases
 
@@ -314,27 +314,27 @@ def adaptive_threshold_detection(signal_data, movement_phases, window_size_ms=11
     peak_detection_samples = int(peak_detection_ms * sampling_rate / 1000)
     rest_samples = window_size_samples - peak_detection_samples
     
-    print(f"  Adaptive threshold detection:")
-    print(f"  Signal duration: {timestamps[-1] - timestamps[0]:.2f}s")
-    print(f"  Window size: {window_size_ms}ms, Activity window: {peak_detection_ms}ms, Rest window: {rest_samples/sampling_rate*1000:.0f}ms")
-    print(f"  Lambda threshold: {lambda_threshold}")
-    print(f"  Movement phases: {len(movement_phases)}")
+    print(f" Adaptive threshold detection:")
+    print(f" Signal duration: {timestamps[-1] - timestamps[0]:.2f}s")
+    print(f" Window size: {window_size_ms}ms, Activity window: {peak_detection_ms}ms, Rest window: {rest_samples/sampling_rate*1000:.0f}ms")
+    print(f" Lambda threshold: {lambda_threshold}")
+    print(f" Movement phases: {len(movement_phases)}")
     
     # Debug: Show phase details
     if len(movement_phases) > 0:
-        print(f"  Movement phase range: {movement_phases[0][0]:.2f}s - {movement_phases[-1][1]:.2f}s")
-        print(f"  Movement phases: {[(f'{start:.2f}s', f'{end:.2f}s') for start, end in movement_phases]}")
+        print(f" Movement phase range: {movement_phases[0][0]:.2f}s - {movement_phases[-1][1]:.2f}s")
+        print(f" Movement phases: {[(f'{start:.2f}s', f'{end:.2f}s') for start, end in movement_phases]}")
     else:
-        print(f"  ⚠️  No movement phases created! This could be due to:")
-        print(f"     - No peaks detected")
-        print(f"     - Empty peak timestamps")
+        print(f"   No movement phases created! This could be due to:")
+        print(f"    - No peaks detected")
+        print(f"    - Empty peak timestamps")
     
     # Evaluate movement phases
     movement_phase_results = []
     detection_delays = []
     
     for i, (start_time, end_time) in enumerate(movement_phases):
-        print(f"  Evaluating movement phase {i+1}: {start_time:.2f}s - {end_time:.2f}s")
+        print(f" Evaluating movement phase {i+1}: {start_time:.2f}s - {end_time:.2f}s")
         
         # Find all windows that overlap with this movement phase
         phase_detections = []
@@ -397,7 +397,7 @@ def adaptive_threshold_detection(signal_data, movement_phases, window_size_ms=11
                     'max_activity_mean': max(d['activity_mean'] for d in phase_detections),
                     'max_threshold': max(d['threshold'] for d in phase_detections)
                 })
-                print(f"    ✓ Detection found at {first_detection_time:.2f}s (delay: {delay*1000:.1f}ms)")
+                print(f"    Detection found at {first_detection_time:.2f}s (delay: {delay*1000:.1f}ms)")
             else:
                 movement_phase_results.append({
                     'phase_id': i,
@@ -409,7 +409,7 @@ def adaptive_threshold_detection(signal_data, movement_phases, window_size_ms=11
                     'max_activity_mean': max(d['activity_mean'] for d in phase_detections),
                     'max_threshold': max(d['threshold'] for d in phase_detections)
                 })
-                print(f"    ✗ No detection found (max activity: {max(d['activity_mean'] for d in phase_detections):.3f}, max threshold: {max(d['threshold'] for d in phase_detections):.3f})")
+                print(f"   ✗ No detection found (max activity: {max(d['activity_mean'] for d in phase_detections):.3f}, max threshold: {max(d['threshold'] for d in phase_detections):.3f})")
         else:
             movement_phase_results.append({
                 'phase_id': i,
@@ -421,7 +421,7 @@ def adaptive_threshold_detection(signal_data, movement_phases, window_size_ms=11
                 'max_activity_mean': 0.0,
                 'max_threshold': 0.0
             })
-            print(f"    ✗ No windows found for this phase")
+            print(f"   ✗ No windows found for this phase")
     
     # Evaluate baseline samples (everything NOT in movement phases)
     baseline_detections = []
@@ -472,19 +472,19 @@ def adaptive_threshold_detection(signal_data, movement_phases, window_size_ms=11
     baseline_total = len(baseline_detections)
     baseline_accuracy = baseline_correct / baseline_total if baseline_total > 0 else 1.0
     
-    print(f"  Baseline Phase (sample-level):")
-    print(f"    Total windows checked: {total_windows_checked}")
-    print(f"    Windows in baseline phases: {baseline_windows_found}")
-    print(f"    Total samples: {baseline_total}")
-    print(f"    Correct (no detection): {baseline_correct}")
-    print(f"    False positives: {baseline_total - baseline_correct}")
-    print(f"    Accuracy: {baseline_accuracy:.3f}")
+    print(f" Baseline Phase (sample-level):")
+    print(f"   Total windows checked: {total_windows_checked}")
+    print(f"   Windows in baseline phases: {baseline_windows_found}")
+    print(f"   Total samples: {baseline_total}")
+    print(f"   Correct (no detection): {baseline_correct}")
+    print(f"   False positives: {baseline_total - baseline_correct}")
+    print(f"   Accuracy: {baseline_accuracy:.3f}")
     
     if baseline_total == 0:
-        print(f"  ⚠️  No baseline samples found! Possible reasons:")
-        print(f"     - No baseline phases created (peaks too close or only one peak)")
-        print(f"     - Signal duration too short for baseline phases")
-        print(f"     - Window size too large for available data")
+        print(f"   No baseline samples found! Possible reasons:")
+        print(f"    - No baseline phases created (peaks too close or only one peak)")
+        print(f"    - Signal duration too short for baseline phases")
+        print(f"    - Window size too large for available data")
     
     # Calculate movement phase metrics
     movement_correct = sum(1 for r in movement_phase_results if r['correct'])
@@ -542,8 +542,8 @@ def sliding_window_evaluation(model, signal_data, movement_phases, window_size_m
     movement_phase_results = []
     detection_delays = []
     
-    print(f"  Evaluating with sliding window (step size: 1 sample)")
-    print(f"  Window size: {window_size_ms}ms, Peak detection zone: {peak_detection_ms}ms")
+    print(f" Evaluating with sliding window (step size: 1 sample)")
+    print(f" Window size: {window_size_ms}ms, Peak detection zone: {peak_detection_ms}ms")
     
     # Sliding window evaluation
     for i in range(len(signal_values) - window_size_samples + 1):
@@ -596,17 +596,17 @@ def sliding_window_evaluation(model, signal_data, movement_phases, window_size_m
     baseline_total = len(baseline_detections)
     baseline_accuracy = baseline_correct / baseline_total if baseline_total > 0 else 1.0
     
-    print(f"  Baseline Phase (sample-level):")
-    print(f"    Total samples: {baseline_total}")
-    print(f"    Correct (no detection): {baseline_correct}")
-    print(f"    False positives: {baseline_total - baseline_correct}")
-    print(f"    Accuracy: {baseline_accuracy:.3f}")
+    print(f" Baseline Phase (sample-level):")
+    print(f"   Total samples: {baseline_total}")
+    print(f"   Correct (no detection): {baseline_correct}")
+    print(f"   False positives: {baseline_total - baseline_correct}")
+    print(f"   Accuracy: {baseline_accuracy:.3f}")
     
     if baseline_total == 0:
-        print(f"  ⚠️  No baseline samples found! Possible reasons:")
-        print(f"     - No baseline phases created (peaks too close or only one peak)")
-        print(f"     - Signal duration too short for baseline phases")
-        print(f"     - Window size too large for available data")
+        print(f"   No baseline samples found! Possible reasons:")
+        print(f"    - No baseline phases created (peaks too close or only one peak)")
+        print(f"    - Signal duration too short for baseline phases")
+        print(f"    - Window size too large for available data")
     
     # Movement phase evaluation (should have at least one detection per phase)
     movement_phase_accuracy = 0
@@ -659,8 +659,8 @@ def evaluate_participant(model, participant_data, window_size_ms=1162, peak_dete
     
     # Create movement phases (everything else is baseline)
     movement_phases = create_movement_phases(peak_timestamps, pre_peak_ms=500, post_peak_ms=800)
-    print(f"✓ Created {len(movement_phases)} movement phases")
-    print(f"✓ Everything else will be treated as baseline")
+    print(f"Created {len(movement_phases)} movement phases")
+    print(f"Everything else will be treated as baseline")
     
     # Run evaluation based on selected method
     if method == "adaptive":
@@ -675,11 +675,11 @@ def evaluate_participant(model, participant_data, window_size_ms=1162, peak_dete
         )
     
     # Print results
-    print(f"  Baseline Phase:")
-    print(f"    Accuracy: {results['baseline_accuracy']:.3f} ({results['baseline_correct']}/{results['baseline_total']})")
-    print(f"  Movement Phase:")
-    print(f"    Accuracy: {results['movement_phase_accuracy']:.3f} ({results['movement_phase_correct']:.0f}/{results['movement_phase_total']})")
-    print(f"  Average Detection Delay: {results['average_delay_ms']:.1f} ms")
+    print(f" Baseline Phase:")
+    print(f"   Accuracy: {results['baseline_accuracy']:.3f} ({results['baseline_correct']}/{results['baseline_total']})")
+    print(f" Movement Phase:")
+    print(f"   Accuracy: {results['movement_phase_accuracy']:.3f} ({results['movement_phase_correct']:.0f}/{results['movement_phase_total']})")
+    print(f" Average Detection Delay: {results['average_delay_ms']:.1f} ms")
     
     return results
 
@@ -848,7 +848,7 @@ def main():
     
     try:
         if not test_data:
-            print(f"❌ Failed to load {dataset_name.lower()} test data")
+            print(f"Failed to load {dataset_name.lower()} test data")
             return
         
         # Select detection method and model
@@ -871,12 +871,12 @@ def main():
             model.to(device)
             model.eval()
         
-            print(f"✓ Loaded trained model: {model_dataset_name}")
-            print(f"✓ Model path: {model_path}")
-            print(f"✓ Using device: {device}")
+            print(f"Loaded trained model: {model_dataset_name}")
+            print(f"Model path: {model_path}")
+            print(f"Using device: {device}")
         else:
-            print(f"✓ Using adaptive threshold detection")
-            print(f"✓ Lambda threshold: {lambda_threshold}")
+            print(f"Using adaptive threshold detection")
+            print(f"Lambda threshold: {lambda_threshold}")
         
         # Evaluate each participant
         all_results = []
@@ -931,20 +931,20 @@ def main():
         print(f"{'Overall':<12} {overall_baseline_acc:<12.3f} {overall_movement_acc:<12.3f} {overall_avg_delay:<15.1f}")
         
         print(f"\nDetailed Statistics:")
-        print(f"  Total baseline samples: {total_baseline}")
-        print(f"  Total movement phases: {total_movement}")
-        print(f"  Overall baseline accuracy: {overall_baseline_acc:.3f}")
-        print(f"  Overall movement phase accuracy: {overall_movement_acc:.3f}")
-        print(f"  Overall average delay: {overall_avg_delay:.1f} ms")
-        print(f"  Delay standard deviation: {np.std([d * 1000 for d in all_delays]):.1f} ms")
+        print(f" Total baseline samples: {total_baseline}")
+        print(f" Total movement phases: {total_movement}")
+        print(f" Overall baseline accuracy: {overall_baseline_acc:.3f}")
+        print(f" Overall movement phase accuracy: {overall_movement_acc:.3f}")
+        print(f" Overall average delay: {overall_avg_delay:.1f} ms")
+        print(f" Delay standard deviation: {np.std([d * 1000 for d in all_delays]):.1f} ms")
         
-        print(f"\n✓ {dataset_name} data evaluation completed successfully!")
-        print(f"✓ Model used: {model_dataset_name}")
-        print(f"✓ Individual visualizations saved in: experiment_results/")
-        print(f"✓ Files: *_movement_phase_evaluation_{model_dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
+        print(f"\n {dataset_name} data evaluation completed successfully!")
+        print(f"Model used: {model_dataset_name}")
+        print(f"Individual visualizations saved in: experiment_results/")
+        print(f"Files: *_movement_phase_evaluation_{model_dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
         
     except Exception as e:
-        print(f"❌ Error during evaluation: {e}")
+        print(f"Error during evaluation: {e}")
         import traceback
         traceback.print_exc()
 

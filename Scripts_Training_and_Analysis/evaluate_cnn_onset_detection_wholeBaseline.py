@@ -35,12 +35,12 @@ def list_available_models():
     """List all available trained models."""
     models_dir = 'trained_models'
     if not os.path.exists(models_dir):
-        print(f"❌ No trained_models directory found")
+        print(f"No trained_models directory found")
         return []
     
     model_files = glob.glob(os.path.join(models_dir, 'cnn_*.pth'))
     if not model_files:
-        print(f"❌ No trained models found in {models_dir}")
+        print(f"No trained models found in {models_dir}")
         return []
     
     # Extract model names and sort them
@@ -74,7 +74,7 @@ def select_model():
             choice = int(input(f"\nSelect model (1-{len(available_models)}): ")) - 1
             if 0 <= choice < len(available_models):
                 selected_model_path, selected_dataset_name = available_models[choice]
-                print(f"✓ Selected: {selected_dataset_name}")
+                print(f"Selected: {selected_dataset_name}")
                 return selected_model_path, selected_dataset_name
             else:
                 print(f"Please enter a number between 1 and {len(available_models)}")
@@ -88,7 +88,7 @@ def load_signal_data(signal_file):
         df = pd.read_csv(signal_file)
         return df
     except Exception as e:
-        print(f"❌ Error loading signal data: {e}")
+        print(f"Error loading signal data: {e}")
         return None
 
 
@@ -99,7 +99,7 @@ def load_peak_labels(peak_file):
         peak_timestamps = df['timestamp'].values
         return peak_timestamps
     except Exception as e:
-        print(f"❌ Error loading peak labels: {e}")
+        print(f"Error loading peak labels: {e}")
         return None
 
 
@@ -127,9 +127,9 @@ def load_test_data():
                 'signal_data': signal_data,
                 'peak_timestamps': peak_timestamps
             })
-            print(f"✓ P{participant_num}: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
+            print(f"P{participant_num}: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
         else:
-            print(f"❌ Failed to load P{participant_num}")
+            print(f"Failed to load P{participant_num}")
     
     print(f"\nTotal test participants: {len(test_data)}")
     
@@ -162,9 +162,9 @@ def load_als_data():
                 'signal_data': signal_data,
                 'peak_timestamps': peak_timestamps
             })
-            print(f"✓ ALS {block}: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
+            print(f"ALS {block}: {len(signal_data)} samples, {len(peak_timestamps)} peaks")
         else:
-            print(f"❌ Failed to load ALS {block}")
+            print(f"Failed to load ALS {block}")
     
     print(f"\nTotal ALS blocks: {len(als_data)}")
     
@@ -215,8 +215,8 @@ def create_phases(peak_timestamps, pre_peak_ms=200, post_peak_ms=800):
             baseline_phases.append((baseline_start, baseline_end))
     
     # Debug information
-    print(f"  Created {len(movement_phases)} movement phases (-{pre_peak_ms}ms to +{post_peak_ms}ms)")
-    print(f"  Created {len(baseline_phases)} baseline phases (peak+{post_peak_ms}ms to next peak-{pre_peak_ms}ms)")
+    print(f" Created {len(movement_phases)} movement phases (-{pre_peak_ms}ms to +{post_peak_ms}ms)")
+    print(f" Created {len(baseline_phases)} baseline phases (peak+{post_peak_ms}ms to next peak-{pre_peak_ms}ms)")
     
     return movement_phases, baseline_phases
 
@@ -265,16 +265,16 @@ def sliding_window_evaluation(model, signal_data, movement_phases, baseline_phas
     
     window_size_samples = int(window_size_ms * sampling_rate / 1000)
     
-    print(f"  Evaluating with sliding window (step size: 1 sample)")
-    print(f"  Window size: {window_size_ms}ms, Peak detection zone: {peak_detection_ms}ms")
-    print(f"  Movement phases: {len(movement_phases)}, Baseline phases: {len(baseline_phases)}")
+    print(f" Evaluating with sliding window (step size: 1 sample)")
+    print(f" Window size: {window_size_ms}ms, Peak detection zone: {peak_detection_ms}ms")
+    print(f" Movement phases: {len(movement_phases)}, Baseline phases: {len(baseline_phases)}")
     
     # Evaluate movement phases
     movement_phase_results = []
     detection_delays = []
     
     for i, (start_time, end_time) in enumerate(movement_phases):
-        print(f"  Evaluating movement phase {i+1}: {start_time:.2f}s - {end_time:.2f}s")
+        print(f" Evaluating movement phase {i+1}: {start_time:.2f}s - {end_time:.2f}s")
         
         # Find all windows that overlap with this movement phase
         phase_detections = []
@@ -320,7 +320,7 @@ def sliding_window_evaluation(model, signal_data, movement_phases, baseline_phas
                     'delay': delay,
                     'max_probability': max(d['probability'] for d in phase_detections)
                 })
-                print(f"    ✓ Detection found at {first_detection_time:.2f}s (delay: {delay*1000:.1f}ms)")
+                print(f"    Detection found at {first_detection_time:.2f}s (delay: {delay*1000:.1f}ms)")
             else:
                 movement_phase_results.append({
                     'phase_id': i,
@@ -331,7 +331,7 @@ def sliding_window_evaluation(model, signal_data, movement_phases, baseline_phas
                     'delay': None,
                     'max_probability': max(d['probability'] for d in phase_detections)
                 })
-                print(f"    ✗ No detection found (max prob: {max(d['probability'] for d in phase_detections):.3f})")
+                print(f"   ✗ No detection found (max prob: {max(d['probability'] for d in phase_detections):.3f})")
         else:
             movement_phase_results.append({
                 'phase_id': i,
@@ -342,13 +342,13 @@ def sliding_window_evaluation(model, signal_data, movement_phases, baseline_phas
                 'delay': None,
                 'max_probability': 0.0
             })
-            print(f"    ✗ No windows found for this phase")
+            print(f"   ✗ No windows found for this phase")
     
     # Evaluate baseline phases
     baseline_phase_results = []
     
     for i, (start_time, end_time) in enumerate(baseline_phases):
-        print(f"  Evaluating baseline phase {i+1}: {start_time:.2f}s - {end_time:.2f}s")
+        print(f" Evaluating baseline phase {i+1}: {start_time:.2f}s - {end_time:.2f}s")
         
         # Find all windows that overlap with this baseline phase
         phase_detections = []
@@ -387,9 +387,9 @@ def sliding_window_evaluation(model, signal_data, movement_phases, baseline_phas
             })
             
             if has_false_positive:
-                print(f"    ✗ False positive detected ({sum(phase_detected)} detections, max prob: {max(d['probability'] for d in phase_detections):.3f})")
+                print(f"   ✗ False positive detected ({sum(phase_detected)} detections, max prob: {max(d['probability'] for d in phase_detections):.3f})")
             else:
-                print(f"    ✓ No false positives (max prob: {max(d['probability'] for d in phase_detections):.3f})")
+                print(f"    No false positives (max prob: {max(d['probability'] for d in phase_detections):.3f})")
         else:
             baseline_phase_results.append({
                 'phase_id': i,
@@ -399,7 +399,7 @@ def sliding_window_evaluation(model, signal_data, movement_phases, baseline_phas
                 'false_positive_count': 0,
                 'max_probability': 0.0
             })
-            print(f"    ✓ No windows found for this phase")
+            print(f"    No windows found for this phase")
     
     # Calculate overall metrics
     movement_correct = sum(1 for r in movement_phase_results if r['correct'])
@@ -437,7 +437,7 @@ def evaluate_participant(model, participant_data, window_size_ms=1162, peak_dete
     
     # Create movement and baseline phases
     movement_phases, baseline_phases = create_phases(peak_timestamps, pre_peak_ms=200, post_peak_ms=800)
-    print(f"✓ Created {len(movement_phases)} movement phases and {len(baseline_phases)} baseline phases")
+    print(f"Created {len(movement_phases)} movement phases and {len(baseline_phases)} baseline phases")
     
     # Run sliding window evaluation
     results = sliding_window_evaluation(
@@ -446,11 +446,11 @@ def evaluate_participant(model, participant_data, window_size_ms=1162, peak_dete
     )
     
     # Print results
-    print(f"  Baseline Phase:")
-    print(f"    Accuracy: {results['baseline_accuracy']:.3f} ({results['baseline_correct']}/{results['baseline_total']})")
-    print(f"  Movement Phase:")
-    print(f"    Accuracy: {results['movement_phase_accuracy']:.3f} ({results['movement_phase_correct']:.0f}/{results['movement_phase_total']})")
-    print(f"  Average Detection Delay: {results['average_delay_ms']:.1f} ms")
+    print(f" Baseline Phase:")
+    print(f"   Accuracy: {results['baseline_accuracy']:.3f} ({results['baseline_correct']}/{results['baseline_total']})")
+    print(f" Movement Phase:")
+    print(f"   Accuracy: {results['movement_phase_accuracy']:.3f} ({results['movement_phase_correct']:.0f}/{results['movement_phase_total']})")
+    print(f" Average Detection Delay: {results['average_delay_ms']:.1f} ms")
     
     return results
 
@@ -587,7 +587,7 @@ def main():
     
     try:
         if not test_data:
-            print(f"❌ Failed to load {dataset_name.lower()} test data")
+            print(f"Failed to load {dataset_name.lower()} test data")
             return
         
         # Select trained model
@@ -604,9 +604,9 @@ def main():
         model.to(device)
         model.eval()
         
-        print(f"✓ Loaded trained model: {model_dataset_name}")
-        print(f"✓ Model path: {model_path}")
-        print(f"✓ Using device: {device}")
+        print(f"Loaded trained model: {model_dataset_name}")
+        print(f"Model path: {model_path}")
+        print(f"Using device: {device}")
         
         # Evaluate each participant
         all_results = []
@@ -660,20 +660,20 @@ def main():
         print(f"{'Overall':<12} {overall_baseline_acc:<12.3f} {overall_movement_acc:<12.3f} {overall_avg_delay:<15.1f}")
         
         print(f"\nDetailed Statistics:")
-        print(f"  Total baseline samples: {total_baseline}")
-        print(f"  Total movement phases: {total_movement}")
-        print(f"  Overall baseline accuracy: {overall_baseline_acc:.3f}")
-        print(f"  Overall movement phase accuracy: {overall_movement_acc:.3f}")
-        print(f"  Overall average delay: {overall_avg_delay:.1f} ms")
-        print(f"  Delay standard deviation: {np.std([d * 1000 for d in all_delays]):.1f} ms")
+        print(f" Total baseline samples: {total_baseline}")
+        print(f" Total movement phases: {total_movement}")
+        print(f" Overall baseline accuracy: {overall_baseline_acc:.3f}")
+        print(f" Overall movement phase accuracy: {overall_movement_acc:.3f}")
+        print(f" Overall average delay: {overall_avg_delay:.1f} ms")
+        print(f" Delay standard deviation: {np.std([d * 1000 for d in all_delays]):.1f} ms")
         
-        print(f"\n✓ {dataset_name} data evaluation completed successfully!")
-        print(f"✓ Model used: {model_dataset_name}")
-        print(f"✓ Individual visualizations saved in: experiment_results/")
-        print(f"✓ Files: *_movement_phase_evaluation_{model_dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
+        print(f"\n {dataset_name} data evaluation completed successfully!")
+        print(f"Model used: {model_dataset_name}")
+        print(f"Individual visualizations saved in: experiment_results/")
+        print(f"Files: *_movement_phase_evaluation_{model_dataset_name.replace(' ', '_').replace('+', 'plus').lower()}.png")
         
     except Exception as e:
-        print(f"❌ Error during evaluation: {e}")
+        print(f"Error during evaluation: {e}")
         import traceback
         traceback.print_exc()
 

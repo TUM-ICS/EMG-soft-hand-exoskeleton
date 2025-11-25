@@ -2,9 +2,12 @@
 
 
 ## Overview
-This repository contains code and data for activity onset detection and post-hoc error correction in the EMG signal of healthy individuals and persons with hand impairment. Next to an adaptive threshold onset detector, it provides scripts for training and evaluating 1D Convolutional Neural Network (CNN). The CNN models are trained  
 
-The models are designed to work with RMS-processed EMG data at a sampling rate of 34.81 Hz, and can be applied to both healthy participants and individuals with hand impairments (ALS, SMA, stroke).
+This repository contains code and data for activity onset detection and post-hoc error correction in the EMG signal of healthy individuals and persons with hand impairment. It provides scripts for training and evaluating 1D Convolutional Neural Network (CNN) models, as well as an adaptive threshold onset detector for comparison.
+
+The models are designed to work with RMS-processed EMG data at a sampling rate of 34.81 Hz, and can be applied to both healthy participants and individuals with hand impairments (ALS, SMA).
+
+**Main Replication Script:** `1_evaluate_cnn_onset_detection.py` is the primary script for replicating CNN onset detection results with models trained on different datasets (i.e. individual with ALS, healthy participants, mixed). See the [Replicating Core Results](#replicating-core-results) section for detailed instructions.
 
 ## Installation
 
@@ -46,12 +49,7 @@ Contains RMS-processed EMG signal data in CSV format. Each file contains time-se
 
 **Hand-impaired Participants:**
 - `RMS_ALS_block1.csv`, `RMS_ALS_block2.csv`, `RMS_ALS_block3.csv`, `RMS_ALS_block4.csv` - ALS patient data blocks
-- `RMS_ALS_34p81hz_cleaned.csv` - Combined ALS clinical data
 - `RMS_SMA_34p81hz_processed_cleaned.csv` - SMA (Spinal Muscular Atrophy) patient data
-- `RMS_stroke_34p81hz_processed_cleaned.csv` - Stroke patient data
-
-**Additional Files:**
-- `cleaning_summary.csv` - Summary of data cleaning procedures applied
 
 All signal data files are sampled at 34.81 Hz and have been processed and cleaned.
 
@@ -66,10 +64,7 @@ Contains ground truth labels (peak timestamps) for activity onsets, used for tra
 **Pathological Participant Labels:**
 - `peaks_ALS_block1.csv` through `peaks_ALS_block4.csv` - Peak timestamps for ALS blocks
 - `peaks_ALS_block1.png` through `peaks_ALS_block4.png` - Visualization plots
-- `peaks_ALS_clinical.csv` and `peaks_ALS_clinical.png` - ALS clinical data labels
 - `peaks_SMA_clinical.csv` and `peaks_SMA_clinical.png` - SMA clinical data labels
-- `peaks_stroke_clinical.csv` and `peaks_stroke_clinical.png` - Stroke clinical data labels
-- `ALS_blocks_summary.csv` - Summary statistics for ALS blocks
 
 Each CSV file contains a `timestamp` column indicating the time points where muscle activity peaks were manually annotated or automatically detected.
 
@@ -134,8 +129,8 @@ python train_cnn_error.py
 
 ### Evaluation Scripts
 
-#### `evaluate_cnn_onset_detection.py`
-**Purpose:** Evaluates trained CNN models on test participants using movement phase analysis.
+#### `1_evaluate_cnn_onset_detection.py` ⭐ **MAIN SCRIPT FOR REPLICATING RESULTS**
+**Purpose:** **This is the primary script for replicating CNN onset detection results with models trained on different datasets.** Evaluates trained CNN models on test participants using movement phase analysis.
 
 **Functionality:**
 - Separates data into "movement phases" (-500ms before peak to +800ms after peak) and "baseline phases"
@@ -143,20 +138,29 @@ python train_cnn_error.py
 - Measures baseline phase accuracy (no false positives)
 - Measures movement phase accuracy (at least one detection per movement)
 - Calculates average delay between first detection and actual peak time
-- Interactive model selection from available trained models
+- **Interactive model selection from available trained models** - allows comparison of models trained on different datasets (healthy only, healthy+ALS, healthy+SMA, etc.)
+- **Supports both CNN model detection and adaptive threshold detection** for comparison
+- Can evaluate on healthy test participants (P12-P15) or ALS patient data (blocks 3-4)
 
 **How to run:**
 ```bash
 cd Scripts_Training_and_Analysis
-python evaluate_cnn_onset_detection.py
+python 1_evaluate_cnn_onset_detection.py
 ```
 
 **Output:**
-- Evaluation plots in `experiment_results/`
-- Performance metrics printed to console
+- Evaluation plots in `experiment_results/` showing movement phase evaluation results
+- Performance metrics printed to console (baseline accuracy, movement phase accuracy, average detection delay)
+- Summary statistics table comparing all evaluated participants
+
+**Key Features:**
+- Compare models trained on different datasets (healthy, healthy+ALS, healthy+SMA, ALS-only, SMA-only)
+- Evaluate on healthy test set (P12-P15) or ALS patient data
+- Compare CNN-based detection with adaptive threshold method
+- Generate publication-ready visualizations
 
 #### `evaluate_cnn_onset_detection_wholeBaseline.py`
-**Purpose:** Similar to `evaluate_cnn_onset_detection.py` but with different movement phase definitions (-100ms before peak to +400ms after peak).
+**Purpose:** Similar to `1_evaluate_cnn_onset_detection.py` but with different movement phase definitions (-100ms before peak to +400ms after peak).
 
 **Functionality:**
 - Uses narrower movement phase windows
@@ -278,9 +282,9 @@ python plot_error_correction.py
    python train_cnn_error.py
    ```
 
-3. **Evaluate models:**
+3. **Evaluate models (main replication script):**
    ```bash
-   python evaluate_cnn_onset_detection.py
+   python 1_evaluate_cnn_onset_detection.py
    ```
 
 4. **Run analyses:**
@@ -315,6 +319,53 @@ python plot_error_correction.py
 - **Output:** Binary classification (activity or baseline)
 - **Architecture:** 1D CNN with 3 convolutional layers, no pooling to preserve sequence length
 - **Use case:** Activity vs. baseline classification, error detection
+
+
+## Replicating Core Results
+
+### Main Replication Script: `1_evaluate_cnn_onset_detection.py`
+
+**This is the primary script for replicating all CNN onset detection results reported in the publication.** It allows you to evaluate models trained on different datasets and compare their performance on healthy test participants or ALS patient data.
+
+### Example: Replicating Healthy-to-ALS Transfer Results
+
+**Result to replicate:** "When training a 1D convolutional neural network (CNN) model on the flexor pollicis longus EMG-RMS data of 15 healthy participants, and evaluating it on the ALS EMG-RMS data, we obtained a sensitivity of 100% and a specificity of 90.6%, i.e. the model could detect grasping intentions accurately, but resulted in a large number of false-positives."
+
+**Replication steps:**
+1. Navigate to the scripts directory:
+   ```bash
+   cd Scripts_Training_and_Analysis
+   ```
+
+2. Run the main evaluation script:
+   ```bash
+   python 1_evaluate_cnn_onset_detection.py
+   ```
+
+3. Follow the interactive prompts:
+   - Select option **2** (evaluating on the ALS patient dataset)
+   - Select option **1** (CNN Model Detection)
+   - Select the trained model corresponding to "healthy" or "healthy plus sma" (typically option 2 or 3, depending on available models)
+
+4. The script will:
+   - Generate evaluation plots for ALS blocks 3 and 4 (close each plot window to continue)
+   - Display a summary table in the terminal with baseline accuracy (specificity) and movement phase accuracy (sensitivity)
+   - Save detailed visualizations in `experiment_results/`
+
+**Note:** The movement phase accuracy corresponds to sensitivity, and baseline phase accuracy corresponds to specificity. The final values will be output in a summary table in the terminal.
+
+### Comparing Different Training Datasets
+
+The script allows you to compare models trained on different datasets:
+- **Healthy only** (`cnn_healthy.pth`) - trained on P1-P11 or P1-P15
+- **Healthy + ALS** (`cnn_healthy_plus_als.pth`) - trained on healthy participants plus ALS blocks 1-2
+- **Healthy + SMA** (`cnn_healthy_plus_sma.pth`) - trained on healthy participants plus SMA data
+- **ALS only** (`cnn_als.pth`) - trained only on ALS blocks 1-2
+- **SMA only** (`cnn_sma.pth`) - trained only on SMA data
+
+Simply select different models when prompted to compare their performance on the test data. 
+
+
 
 ## Citation
 
