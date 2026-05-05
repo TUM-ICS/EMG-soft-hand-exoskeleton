@@ -1,0 +1,15 @@
+[project]
+name = "emg-soft-hand-exoskeleton"
+version = "0.1.0"
+description = "Activity onset detection and post-hoc error correction in EMG signal for healthy and hand-impaired individuals"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy==1.26.4",
+    "pandas==2.2.3",
+    "matplotlib==3.10.6",
+    "torch==2.7.1",
+    "scikit-learn==1.7.0",
+    "scipy==1.16.0",
+    "joblib==1.5.1",
+]
