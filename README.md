@@ -289,7 +289,7 @@ python gradcam_analysis.py
 
 ### Example: Replicating Healthy-to-ALS Transfer Results
 
-**Result to replicate:** "When training a 1D convolutional neural network (CNN) model on the flexor pollicis longus EMG-RMS data of 15 healthy participants, and evaluating it on the ALS EMG-RMS data, we obtained a sensitivity of 100% and a specificity of 90.6%, i.e. the model could detect grasping intentions accurately, but resulted in a large number of false-positives."
+**Result to replicate:** _"When training a 1D convolutional neural network (CNN) model on the flexor pollicis longus EMG-RMS data of 15 healthy participants, and evaluating it on the ALS EMG-RMS data, we obtained a sensitivity of 100% and a specificity of 90.6%, i.e. the model could detect grasping intentions accurately, but resulted in a large number of false-positives."_
 
 **Replication steps:**
 1. Navigate to the scripts directory:
@@ -330,4 +330,4 @@ Simply select different models when prompted to compare their performance on the
 ## Citation
 
 If you use this code or data in your research, please cite the associated scientific publication. 
-
+> **Citation pending** — full reference and DOI will be added upon publication.
